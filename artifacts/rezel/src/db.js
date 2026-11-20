@@ -1,12 +1,14 @@
 import { openDB } from 'idb';
 
 const DATABASE_NAME = 'rezel-local';
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 const SETTINGS_STORE = 'settings';
 const CUSTOMERS_STORE = 'customers';
 const SERVICES_STORE = 'services';
 const APPOINTMENTS_STORE = 'appointments';
 const PAYMENTS_STORE = 'payments';
+const EXPENSES_STORE = 'expenses';
+const ORDERS_STORE = 'orders';
 const BUSINESS_TYPE_KEY = 'businessType';
 
 let databasePromise;
@@ -33,6 +35,12 @@ function getDatabase() {
         }
         if (!database.objectStoreNames.contains(PAYMENTS_STORE)) {
           database.createObjectStore(PAYMENTS_STORE, { keyPath: 'id' });
+        }
+        if (!database.objectStoreNames.contains(EXPENSES_STORE)) {
+          database.createObjectStore(EXPENSES_STORE, { keyPath: 'id' });
+        }
+        if (!database.objectStoreNames.contains(ORDERS_STORE)) {
+          database.createObjectStore(ORDERS_STORE, { keyPath: 'id' });
         }
       },
     }).catch((error) => {
@@ -178,10 +186,10 @@ export async function softDeleteService(id) {
   return softDeleteRecord(SERVICES_STORE, id);
 }
 
-function requireDate(value) {
-  const date = requireText(value, 'Appointment date');
+function requireDate(value, fieldName = 'Date') {
+  const date = requireText(value, fieldName);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw new TypeError('Appointment date must use YYYY-MM-DD format.');
+    throw new TypeError(`${fieldName} must use YYYY-MM-DD format.`);
   }
 
   const [year, month, day] = date.split('-').map(Number);
@@ -191,7 +199,7 @@ function requireDate(value) {
     check.getUTCMonth() !== month - 1 ||
     check.getUTCDate() !== day
   ) {
-    throw new TypeError('Appointment date is invalid.');
+    throw new TypeError(`${fieldName} is invalid.`);
   }
 
   return date;
@@ -232,7 +240,7 @@ export async function addAppointmentWithDeposit({
 }) {
   const selectedCustomerId = requireText(customerId, 'Customer');
   const selectedServiceId = requireText(serviceId, 'Service');
-  const appointmentDate = requireDate(date);
+  const appointmentDate = requireDate(date, 'Appointment date');
   const appointmentTime = requireTime(time);
   const deposit = Number(depositAmount);
 
@@ -302,6 +310,133 @@ export async function addAppointmentWithDeposit({
     ]);
     await transactionDone;
     return { appointment, payment };
+  } catch (error) {
+    try {
+      transaction.abort();
+    } catch {
+      // The transaction may already have completed or aborted.
+    }
+    try {
+      await transactionDone;
+    } catch {
+      // Consume the aborted transaction rejection before reporting the cause.
+    }
+    throw error;
+  }
+}
+
+export async function getAllExpenses() {
+  const database = await getDatabase();
+  const expenses = await database.getAll(EXPENSES_STORE);
+
+  return expenses.sort(
+    (a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt),
+  );
+}
+
+export async function addExpense({ amount, category, date, notes = '' }) {
+  const parsedAmount = Number(amount);
+  if (
+    amount === null ||
+    amount === undefined ||
+    amount === '' ||
+    !Number.isFinite(parsedAmount) ||
+    parsedAmount <= 0
+  ) {
+    throw new TypeError('Expense amount must be a positive number.');
+  }
+
+  const expense = {
+    id: createRecordId(),
+    amount: parsedAmount,
+    category: requireText(category, 'Expense category'),
+    date: requireDate(date, 'Expense date'),
+    notes: optionalText(notes),
+    createdAt: new Date().toISOString(),
+  };
+
+  const database = await getDatabase();
+  await database.add(EXPENSES_STORE, expense);
+  return expense;
+}
+
+const ORDER_STATUSES = new Set(['new', 'in_progress', 'ready', 'delivered']);
+
+export async function getAllOrders() {
+  const database = await getDatabase();
+  const orders = await database.getAll(ORDERS_STORE);
+
+  return orders.sort(
+    (a, b) => a.dueDate.localeCompare(b.dueDate) || b.createdAt.localeCompare(a.createdAt),
+  );
+}
+
+export async function addOrder({
+  customerId,
+  description,
+  price,
+  deposit,
+  dueDate,
+  status = 'new',
+  notes = '',
+}) {
+  const selectedCustomerId = requireText(customerId, 'Customer');
+  const orderDescription = requireText(description, 'Order description');
+  const parsedPrice = Number(price);
+  const parsedDeposit = Number(deposit);
+  const orderDueDate = requireDate(dueDate, 'Order due date');
+
+  if (
+    price === null ||
+    price === undefined ||
+    price === '' ||
+    !Number.isFinite(parsedPrice) ||
+    parsedPrice <= 0
+  ) {
+    throw new TypeError('Order price must be a positive number.');
+  }
+  if (
+    deposit === null ||
+    deposit === undefined ||
+    deposit === '' ||
+    !Number.isFinite(parsedDeposit) ||
+    parsedDeposit < 0 ||
+    parsedDeposit > parsedPrice
+  ) {
+    throw new TypeError('Order deposit must be between zero and the order price.');
+  }
+  if (!ORDER_STATUSES.has(status)) {
+    throw new TypeError('Order status is invalid.');
+  }
+
+  const order = {
+    id: createRecordId(),
+    customerId: selectedCustomerId,
+    description: orderDescription,
+    price: parsedPrice,
+    deposit: parsedDeposit,
+    dueDate: orderDueDate,
+    status,
+    notes: optionalText(notes),
+    createdAt: new Date().toISOString(),
+  };
+
+  const database = await getDatabase();
+  const transaction = database.transaction(
+    [CUSTOMERS_STORE, ORDERS_STORE],
+    'readwrite',
+  );
+  const transactionDone = transaction.done;
+
+  try {
+    const customer = await transaction.objectStore(CUSTOMERS_STORE).get(selectedCustomerId);
+    if (!customer || customer.deletedAt) {
+      throw new Error('The selected customer is no longer available.');
+    }
+
+    await transaction.objectStore(ORDERS_STORE).add(order);
+    await transactionDone;
+    return order;
   } catch (error) {
     try {
       transaction.abort();
