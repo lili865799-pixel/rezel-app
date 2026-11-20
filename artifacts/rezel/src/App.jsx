@@ -12,6 +12,7 @@ import {
 } from 'react-router-dom';
 import { getBusinessType, saveBusinessType } from './db.js';
 import Dashboard from './Dashboard.jsx';
+import Appointments from './Appointments.jsx';
 import Customers from './Customers.jsx';
 import Services from './Services.jsx';
 
@@ -397,10 +398,7 @@ function AppRoutes() {
       <Route path="/" element={<Onboarding />} />
       <Route element={<AppLayout />}>
         <Route path="/dashboard" element={<DashboardRoute />} />
-        <Route
-          path="/calendar"
-          element={<PlaceholderPage page="calendar" />}
-        />
+        <Route path="/calendar" element={<Appointments />} />
         <Route path="/customers" element={<Customers />} />
         <Route path="/services" element={<Services />} />
         <Route path="/more" element={<PlaceholderPage page="more" />} />

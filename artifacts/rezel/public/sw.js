@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'rezel-shell-v1';
+const CACHE_VERSION = 'rezel-shell-v2';
 const BASE_URL = self.registration.scope;
 const APP_URL = new URL('index.html', BASE_URL).href;
 const MANIFEST_URL = new URL('manifest.webmanifest', BASE_URL).href;
