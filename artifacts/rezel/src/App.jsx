@@ -12,6 +12,8 @@ import {
 } from 'react-router-dom';
 import { getBusinessType, saveBusinessType } from './db.js';
 import Dashboard from './Dashboard.jsx';
+import Customers from './Customers.jsx';
+import Services from './Services.jsx';
 
 const businesses = [
   { id: 'salon', name: 'صالون وحلاقة', mark: '💇‍♀️' },
@@ -399,14 +401,8 @@ function AppRoutes() {
           path="/calendar"
           element={<PlaceholderPage page="calendar" />}
         />
-        <Route
-          path="/customers"
-          element={<PlaceholderPage page="customers" />}
-        />
-        <Route
-          path="/services"
-          element={<PlaceholderPage page="services" />}
-        />
+        <Route path="/customers" element={<Customers />} />
+        <Route path="/services" element={<Services />} />
         <Route path="/more" element={<PlaceholderPage page="more" />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
