@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "REZEL Onboarding"
+description = "A lightweight, mobile-first Arabic RTL onboarding screen for REZEL, where small business owners choose their business type."
+version = "1.0.0"
+id = "artifacts/rezel"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22894
+
+[services.development]
+run = "pnpm --filter @workspace/rezel run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/rezel", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/rezel/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22894"
+BASE_PATH = "/"
