@@ -14,6 +14,8 @@ import { getBusinessType, saveBusinessType } from './db.js';
 import Dashboard from './Dashboard.jsx';
 import Appointments from './Appointments.jsx';
 import Customers from './Customers.jsx';
+import Expenses from './Expenses.jsx';
+import Orders from './Orders.jsx';
 import Services from './Services.jsx';
 
 const businesses = [
@@ -51,9 +53,9 @@ const placeholderPages = {
   },
   more: {
     title: 'المزيد',
-    subtitle: 'إعدادات ومساحة نشاطك.',
-    empty: 'كل ما يخص نشاطك',
-    detail: 'هذه المساحة مهيأة لإعدادات وأدوات REZEL.',
+    subtitle: 'أدوات إضافية لتنظيم نشاطك.',
+    empty: 'مساحة أدوات نشاطك',
+    detail: 'تابع المصروفات والطلبات الخاصة من هنا.',
   },
 };
 
@@ -366,21 +368,42 @@ function PlaceholderPage({ page }) {
     <main className="app-content" dir="rtl" data-testid={`page-${page}`}>
       <h1 className="page-heading">{details.title}</h1>
       <p className="page-kicker">{details.subtitle}</p>
-      <section
-        className="placeholder-panel"
-        aria-labelledby={`placeholder-title-${page}`}
-      >
-        <span className="placeholder-emblem" aria-hidden="true">
-          <NavIcon name={page} />
-        </span>
-        <h2
-          id={`placeholder-title-${page}`}
-          data-testid={`text-${page}-empty-title`}
+      {page === 'more' ? (
+        <section className="more-module-list" aria-label="أدوات النشاط" data-testid="list-more-modules">
+          <Link className="more-module-card" to="/expenses" data-testid="link-more-expenses">
+            <span className="more-module-symbol" aria-hidden="true">−</span>
+            <span className="more-module-copy">
+              <strong>المصروفات</strong>
+              <span>سجّل ما يخرج من نشاطك.</span>
+            </span>
+            <span className="more-module-arrow" aria-hidden="true">‹</span>
+          </Link>
+          <Link className="more-module-card" to="/orders" data-testid="link-more-orders">
+            <span className="more-module-symbol" aria-hidden="true">ر</span>
+            <span className="more-module-copy">
+              <strong>الطلبات الخاصة</strong>
+              <span>تابع طلبات العملاء ومواعيدها.</span>
+            </span>
+            <span className="more-module-arrow" aria-hidden="true">‹</span>
+          </Link>
+        </section>
+      ) : (
+        <section
+          className="placeholder-panel"
+          aria-labelledby={`placeholder-title-${page}`}
         >
-          {details.empty}
-        </h2>
-        <p data-testid={`text-${page}-empty-copy`}>{details.detail}</p>
-      </section>
+          <span className="placeholder-emblem" aria-hidden="true">
+            <NavIcon name={page} />
+          </span>
+          <h2
+            id={`placeholder-title-${page}`}
+            data-testid={`text-${page}-empty-title`}
+          >
+            {details.empty}
+          </h2>
+          <p data-testid={`text-${page}-empty-copy`}>{details.detail}</p>
+        </section>
+      )}
       <div
         className="business-context"
         data-testid={`text-${page}-business-context`}
@@ -401,6 +424,8 @@ function AppRoutes() {
         <Route path="/calendar" element={<Appointments />} />
         <Route path="/customers" element={<Customers />} />
         <Route path="/services" element={<Services />} />
+        <Route path="/expenses" element={<Expenses />} />
+        <Route path="/orders" element={<Orders />} />
         <Route path="/more" element={<PlaceholderPage page="more" />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   getAllAppointments,
   getAllCustomers,
+  getAllExpenses,
   getAllPayments,
   getAllServices,
 } from './db.js';
@@ -36,6 +37,7 @@ function Dashboard({ businessName, currentDate }) {
   const [records, setRecords] = useState({
     appointments: [],
     customers: [],
+    expenses: [],
     payments: [],
     services: [],
   });
@@ -44,13 +46,14 @@ function Dashboard({ businessName, currentDate }) {
   const loadDashboard = useCallback(async () => {
     setStatus('loading');
     try {
-      const [appointments, payments, customers, services] = await Promise.all([
+      const [appointments, payments, customers, services, expenses] = await Promise.all([
         getAllAppointments(),
         getAllPayments(),
         getAllCustomers(),
         getAllServices(),
+        getAllExpenses(),
       ]);
-      setRecords({ appointments, payments, customers, services });
+      setRecords({ appointments, payments, customers, services, expenses });
       setStatus('ready');
     } catch {
       setStatus('error');
@@ -85,11 +88,17 @@ function Dashboard({ businessName, currentDate }) {
       0,
     );
   }, 0);
+  const todaysExpenses = records.expenses.reduce(
+    (total, expense) => expense.date === today
+      ? total + Number(expense.amount || 0)
+      : total,
+    0,
+  );
   const values = {
     appointments: todaysAppointments.length,
     revenue: todaysRevenue,
     pending,
-    expenses: 0,
+    expenses: todaysExpenses,
   };
   const customersById = new Map(records.customers.map((item) => [item.id, item]));
   const servicesById = new Map(records.services.map((item) => [item.id, item]));
@@ -189,7 +198,7 @@ function Dashboard({ businessName, currentDate }) {
             )}
           </section>
           <p className="dashboard-footnote" data-testid="text-expenses-note">
-            المصروفات غير مضافة بعد؛ سيبقى هذا الرقم صفراً.
+            إجمالي المصروفات المسجّلة لهذا اليوم.
           </p>
         </>
       )}
