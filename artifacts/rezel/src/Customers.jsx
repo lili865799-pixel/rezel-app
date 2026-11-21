@@ -1,6 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { addCustomer, getAllCustomers, softDeleteCustomer } from './db.js';
 
+function getWhatsAppPhone(phone) {
+  const value = String(phone || '').trim();
+  let digits = value.replace(/\D/g, '');
+
+  if (value.startsWith('00')) {
+    digits = digits.slice(2);
+  } else if (digits.startsWith('0')) {
+    digits = `213${digits.slice(1)}`;
+  } else if (digits.length === 9 && !digits.startsWith('213')) {
+    digits = `213${digits}`;
+  }
+
+  return digits;
+}
+
 function CustomerForm({ onClose, onAdded }) {
   const dialogRef = useRef(null);
   const [name, setName] = useState('');
@@ -171,7 +186,22 @@ function Customers() {
             <article className="record-card" key={customer.id} data-testid={`record-customer-${customer.id}`}>
               <div className="record-main">
                 <span className="record-avatar" aria-hidden="true">{customer.name.trim().slice(0, 1)}</span>
-                <div className="record-details"><h2 className="record-name" data-testid={`text-customer-name-${customer.id}`}>{customer.name}</h2><span className="record-meta" data-testid={`text-customer-phone-${customer.id}`}>{customer.phone}</span></div>
+                <div className="record-details">
+                  <h2 className="record-name" data-testid={`text-customer-name-${customer.id}`}>{customer.name}</h2>
+                  <div className="customer-phone-row">
+                    <span className="record-meta" data-testid={`text-customer-phone-${customer.id}`}>{customer.phone}</span>
+                    <a
+                      className="customer-whatsapp"
+                      href={`https://wa.me/${getWhatsAppPhone(customer.phone)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`مراسلة ${customer.name} عبر واتساب`}
+                      data-testid={`link-whatsapp-customer-${customer.id}`}
+                    >
+                      واتساب
+                    </a>
+                  </div>
+                </div>
               </div>
               <button className="record-delete" type="button" aria-label={`حذف ${customer.name}`} data-testid={`button-delete-customer-${customer.id}`} onClick={() => setDeleting(customer)}><span aria-hidden="true">×</span></button>
             </article>

@@ -17,6 +17,8 @@ import Customers from './Customers.jsx';
 import Expenses from './Expenses.jsx';
 import Orders from './Orders.jsx';
 import Services from './Services.jsx';
+import Splash from './Splash.jsx';
+import BrandHeader from './BrandHeader.jsx';
 
 const businesses = [
   { id: 'salon', name: 'صالون وحلاقة', mark: '💇‍♀️' },
@@ -148,11 +150,7 @@ function Onboarding() {
 
   return (
     <div className="app-frame onboarding-frame" dir="rtl">
-      <header className="topbar onboarding-topbar" aria-label="REZEL">
-        <span className="elite-mark" data-testid="text-elite-mark">
-          BB ÉLITE
-        </span>
-      </header>
+      <BrandHeader onboarding />
 
       <main className="onboarding">
         <div className="brand-lockup" aria-label="REZEL">
@@ -260,6 +258,7 @@ function AppLayout() {
         aria-label="جارٍ تحميل بيانات النشاط"
         data-testid="status-business-loading"
       >
+        <BrandHeader />
         <div className="state-card">
           <p className="state-brand">REZEL</p>
           <div className="skeleton" />
@@ -273,6 +272,7 @@ function AppLayout() {
   if (status === 'error' || status === 'missing') {
     return (
       <div className="shell-state" dir="rtl">
+        <BrandHeader />
         <section
           className="state-card"
           role="alert"
@@ -292,7 +292,7 @@ function AppLayout() {
           {status === 'missing' ? (
             <Link
               className="retry-button"
-              to="/"
+              to="/onboarding"
               data-testid="link-return-onboarding"
             >
               اختيار النشاط
@@ -314,17 +314,7 @@ function AppLayout() {
 
   return (
     <div className="app-frame" dir="rtl">
-      <header className="topbar">
-        <span className="brand-mini" aria-label="REZEL">
-          <span className="brand-mini-mark" aria-hidden="true">
-            R
-          </span>
-          REZEL
-        </span>
-        <span className="elite-mark" data-testid="text-elite-mark">
-          BB ÉLITE
-        </span>
-      </header>
+      <BrandHeader />
 
       <Outlet context={{ businessName }} />
 
@@ -418,7 +408,8 @@ function PlaceholderPage({ page }) {
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Onboarding />} />
+      <Route path="/" element={<Splash />} />
+      <Route path="/onboarding" element={<Onboarding />} />
       <Route element={<AppLayout />}>
         <Route path="/dashboard" element={<DashboardRoute />} />
         <Route path="/calendar" element={<Appointments />} />
