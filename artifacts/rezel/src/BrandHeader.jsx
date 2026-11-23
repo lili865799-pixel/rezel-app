@@ -1,6 +1,6 @@
 function BrandHeader({ onboarding = false }) {
   return (
-    <header className={`topbar${onboarding ? ' onboarding' : ''}`}>
+    <header className={`topbar${onboarding ? ' onboarding-topbar' : ''}`} aria-label="REZEL">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
         <img
           src="/images/icon_png614.jpg"

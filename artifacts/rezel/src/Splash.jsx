@@ -1,33 +1,44 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getBusinessType } from './db.js';
 
 export default function Splash() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      // التحقق إذا كان المستخدم قد اختار نشاطه من قبل
-      const savedBusiness = localStorage.getItem('businessType'); 
-      if (savedBusiness) {
-        navigate('/dashboard');
-      } else {
-        navigate('/'); 
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      let savedBusiness = '';
+      try {
+        savedBusiness = await getBusinessType();
+      } catch {
+        // If IndexedDB is unavailable, send the user to setup rather than looping.
       }
-    }, 2000); // ثانيتان
 
-    return () => clearTimeout(timer);
+      if (!cancelled) {
+        const destination = typeof savedBusiness === 'string' && savedBusiness.trim()
+          ? '/dashboard'
+          : '/onboarding';
+        navigate(destination, { replace: true });
+      }
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [navigate]);
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      justifyContent: 'center', 
-      alignItems: 'center', 
-      height: '100vh', 
-      backgroundColor: '#F7F1E8' 
+    <div className="splash-frame" style={{
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      minHeight: '100vh',
+      backgroundColor: '#F7F1E8',
     }}>
       <img 
-        src="/images/icon_png768.jpg" 
+        src="/images/icon_pgn768.jpg" 
         alt="BB ÉLITE" 
         style={{ width: '250px', height: 'auto' }} 
       />

@@ -20,6 +20,25 @@ function localDateKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function amountInCents(value) {
+  const amount = typeof value === 'number' || typeof value === 'string'
+    ? Number(value)
+    : Number.NaN;
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+
+  const cents = Math.round(amount * 100);
+  return Number.isSafeInteger(cents) ? cents : 0;
+}
+
+function paymentLocalDateKey(value) {
+  if (typeof value !== 'string' && typeof value !== 'number' && !(value instanceof Date)) {
+    return '';
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : localDateKey(date);
+}
+
 function isCancelled(appointment) {
   return ['cancelled', 'canceled', 'ملغي'].includes(
     String(appointment.status || '').toLowerCase(),
@@ -29,7 +48,7 @@ function isCancelled(appointment) {
 const statsMeta = [
   { key: 'appointments', label: 'مواعيد اليوم', symbol: '◷', unit: 'موعد' },
   { key: 'revenue', label: 'إيرادات اليوم', symbol: 'ر', unit: '' },
-  { key: 'pending', label: 'مدفوعات معلّقة', symbol: '◌', unit: '' },
+  { key: 'pending', label: 'المتبقي اليوم', symbol: '◌', unit: '' },
   { key: 'expenses', label: 'المصروفات', symbol: '−', unit: '' },
 ];
 
@@ -68,37 +87,36 @@ function Dashboard({ businessName, currentDate }) {
   const todaysAppointments = records.appointments
     .filter((appointment) => appointment.date === today && !isCancelled(appointment))
     .sort((a, b) => a.time.localeCompare(b.time));
-  const todaysRevenue = records.payments.reduce((total, payment) => {
-    const paymentDate = new Date(payment.date);
-    return Number.isNaN(paymentDate.getTime()) || localDateKey(paymentDate) !== today
-      ? total
-      : total + Number(payment.amount || 0);
-  }, 0);
-  const paidByAppointment = new Map();
+  let todaysRevenueCents = 0;
+  const paidByAppointmentCents = new Map();
   records.payments.forEach((payment) => {
-    paidByAppointment.set(
-      payment.appointmentId,
-      (paidByAppointment.get(payment.appointmentId) || 0) + Number(payment.amount || 0),
-    );
+    const amountCents = amountInCents(payment.amount);
+    if (paymentLocalDateKey(payment.date) === today) {
+      todaysRevenueCents += amountCents;
+    }
+    if (payment.appointmentId) {
+      paidByAppointmentCents.set(
+        payment.appointmentId,
+        (paidByAppointmentCents.get(payment.appointmentId) || 0) + amountCents,
+      );
+    }
   });
-  const pending = records.appointments.reduce((total, appointment) => {
-    if (isCancelled(appointment)) return total;
-    return total + Math.max(
-      Number(appointment.price || 0) - (paidByAppointment.get(appointment.id) || 0),
-      0,
-    );
+  const pendingCents = todaysAppointments.reduce((total, appointment) => {
+    const priceCents = amountInCents(appointment.price);
+    const paidCents = paidByAppointmentCents.get(appointment.id) || 0;
+    return total + Math.max(priceCents - Math.min(paidCents, priceCents), 0);
   }, 0);
-  const todaysExpenses = records.expenses.reduce(
+  const todaysExpensesCents = records.expenses.reduce(
     (total, expense) => expense.date === today
-      ? total + Number(expense.amount || 0)
+      ? total + amountInCents(expense.amount)
       : total,
     0,
   );
   const values = {
     appointments: todaysAppointments.length,
-    revenue: todaysRevenue,
-    pending,
-    expenses: todaysExpenses,
+    revenue: todaysRevenueCents / 100,
+    pending: pendingCents / 100,
+    expenses: todaysExpensesCents / 100,
   };
   const customersById = new Map(records.customers.map((item) => [item.id, item]));
   const servicesById = new Map(records.services.map((item) => [item.id, item]));

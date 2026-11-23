@@ -43,7 +43,7 @@ function ServiceForm({ onClose, onAdded }) {
   }
 
   return (
-    <dialog ref={dialogRef} className="record-modal" aria-labelledby="service-form-title" data-testid="dialog-add-service" onCancel={(event) => { event.preventDefault(); onClose(); }}>
+    <dialog ref={dialogRef} className="record-modal service-form-modal" aria-labelledby="service-form-title" data-testid="dialog-add-service" onCancel={(event) => { event.preventDefault(); onClose(); }}>
       <div className="modal-topline">
         <div><h2 className="modal-title" id="service-form-title">خدمة جديدة</h2><p className="modal-copy">أضف خدمة وسعراً واضحاً لقائمتك.</p></div>
         <button className="modal-close" type="button" aria-label="إغلاق" data-testid="button-close-service-form" onClick={onClose}>×</button>

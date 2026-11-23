@@ -24,6 +24,23 @@ function isCancelled(appointment) {
   );
 }
 
+function safeAmount(value) {
+  const amount = typeof value === 'number' || typeof value === 'string'
+    ? Number(value)
+    : Number.NaN;
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
+function formatAppointmentDate(date) {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return 'تاريخ غير متاح';
+  const [year, month, day] = date.split('-').map(Number);
+  return new Intl.DateTimeFormat('ar-DZ', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date(year, month - 1, day, 12));
+}
+
 function AppointmentForm({ customers, services, onClose, onBooked }) {
   const dialogRef = useRef(null);
   const [customerId, setCustomerId] = useState('');
@@ -166,6 +183,7 @@ function Appointments() {
   });
   const [status, setStatus] = useState('loading');
   const [showForm, setShowForm] = useState(false);
+  const [appointmentFilter, setAppointmentFilter] = useState('today');
 
   const loadRecords = useCallback(async () => {
     setStatus('loading');
@@ -188,18 +206,20 @@ function Appointments() {
   }, [loadRecords]);
 
   const today = localDateKey();
-  const todaysAppointments = useMemo(
+  const visibleAppointments = useMemo(
     () => records.appointments
-      .filter((appointment) => appointment.date === today && !isCancelled(appointment))
-      .sort((a, b) => a.time.localeCompare(b.time)),
-    [records.appointments, today],
+      .filter((appointment) => appointmentFilter === 'all'
+        || (appointment.date === today && !isCancelled(appointment)))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time)),
+    [records.appointments, appointmentFilter, today],
   );
   const customersById = useMemo(() => new Map(records.customers.map((item) => [item.id, item])), [records.customers]);
   const servicesById = useMemo(() => new Map(records.services.map((item) => [item.id, item])), [records.services]);
   const paidByAppointment = useMemo(() => {
     const totals = new Map();
     records.payments.forEach((payment) => {
-      totals.set(payment.appointmentId, (totals.get(payment.appointmentId) || 0) + Number(payment.amount || 0));
+      const amount = safeAmount(payment.amount);
+      totals.set(payment.appointmentId, (totals.get(payment.appointmentId) || 0) + amount);
     });
     return totals;
   }, [records.payments]);
@@ -218,17 +238,42 @@ function Appointments() {
             <span className="eyebrow">يومك، مرتب</span>
             <h1 className="records-heading">المواعيد</h1>
           </div>
-          <span className="appointments-date-mark" aria-hidden="true">اليوم</span>
+          <span className="appointments-date-mark" aria-hidden="true">
+            {appointmentFilter === 'today' ? 'اليوم' : 'الكل'}
+          </span>
         </div>
         <p className="records-subtitle">كل زيارة في وقتها، وكل التفاصيل قريبة.</p>
         <div className="today-date-strip">
           <span className="today-date-number">{new Intl.DateTimeFormat('ar-DZ', { day: 'numeric' }).format(new Date())}</span>
           <span>{new Intl.DateTimeFormat('ar-DZ', { weekday: 'long', month: 'long' }).format(new Date())}</span>
           <span className="today-date-count" data-testid="text-appointments-count">
-            {new Intl.NumberFormat('ar-DZ').format(todaysAppointments.length)} مواعيد
+            {new Intl.NumberFormat('ar-DZ').format(visibleAppointments.length)} موعد
           </span>
         </div>
       </header>
+
+      {status === 'ready' && !missingSetup && (
+        <div className="appointment-filter" role="group" aria-label="تصفية المواعيد" data-testid="appointments-filter">
+          <button
+            className={appointmentFilter === 'today' ? 'is-active' : ''}
+            type="button"
+            aria-pressed={appointmentFilter === 'today'}
+            data-testid="button-filter-appointments-today"
+            onClick={() => setAppointmentFilter('today')}
+          >
+            اليوم
+          </button>
+          <button
+            className={appointmentFilter === 'all' ? 'is-active' : ''}
+            type="button"
+            aria-pressed={appointmentFilter === 'all'}
+            data-testid="button-filter-appointments-all"
+            onClick={() => setAppointmentFilter('all')}
+          >
+            كل المواعيد
+          </button>
+        </div>
+      )}
 
       {status === 'loading' && (
         <section className="records-loading appointments-loading" role="status" aria-label="جارٍ تحميل المواعيد" data-testid="status-appointments-loading">
@@ -252,32 +297,40 @@ function Appointments() {
           </div>
         </section>
       )}
-      {status === 'ready' && !missingSetup && todaysAppointments.length === 0 && (
+      {status === 'ready' && !missingSetup && visibleAppointments.length === 0 && (
         <section className="records-empty appointments-empty" data-testid="state-appointments-empty">
           <span className="appointments-empty-graphic" aria-hidden="true"><span /><span /><span /></span>
-          <span className="eyebrow">مساحة لبداية جميلة</span>
-          <h2>لا توجد مواعيد اليوم</h2>
-          <p>أضف أول موعد ودع تفاصيل يومك تتشكل بهدوء.</p>
+          <span className="eyebrow">{appointmentFilter === 'today' ? 'مساحة لبداية جميلة' : 'جدولك الكامل'}</span>
+          <h2>{appointmentFilter === 'today' ? 'لا توجد مواعيد اليوم' : 'لا توجد مواعيد مسجّلة'}</h2>
+          <p>{appointmentFilter === 'today' ? 'أضف أول موعد ودع تفاصيل يومك تتشكل بهدوء.' : 'ستظهر المواعيد القادمة والسابقة هنا بعد إضافتها.'}</p>
           <button type="button" className="empty-add-link" data-testid="button-empty-add-appointment" onClick={() => setShowForm(true)}>
             إضافة موعد
           </button>
         </section>
       )}
-      {status === 'ready' && todaysAppointments.length > 0 && (
-        <section className="appointments-list-wrap" aria-label="مواعيد اليوم" data-testid="list-appointments">
+      {status === 'ready' && !missingSetup && visibleAppointments.length > 0 && (
+        <section className="appointments-list-wrap" aria-label={appointmentFilter === 'today' ? 'مواعيد اليوم' : 'كل المواعيد'} data-testid="list-appointments">
           <div className="appointments-list-label">
-            <h2>جدول اليوم</h2>
-            <span>مرتّب حسب الوقت</span>
+            <h2>{appointmentFilter === 'today' ? 'جدول اليوم' : 'كل المواعيد'}</h2>
+            <span>{appointmentFilter === 'today' ? 'مرتّب حسب الوقت' : 'مرتّبة حسب التاريخ والوقت'}</span>
           </div>
           <div className="appointments-list">
-            {todaysAppointments.map((appointment) => {
+            {visibleAppointments.map((appointment) => {
               const customer = customersById.get(appointment.customerId);
               const service = servicesById.get(appointment.serviceId);
-              const price = Number(appointment.price || 0);
-              const due = Math.max(price - (paidByAppointment.get(appointment.id) || 0), 0);
+              const price = safeAmount(appointment.price);
+              const paid = paidByAppointment.get(appointment.id) || 0;
+              const due = isCancelled(appointment)
+                ? 0
+                : Math.max(price - Math.min(paid, price), 0);
               return (
-                <article className="appointment-card" key={appointment.id} data-testid={`appointment-card-${appointment.id}`}>
+                <article className={`appointment-card${appointmentFilter === 'all' ? ' appointment-card-all' : ''}`} key={appointment.id} data-testid={`appointment-card-${appointment.id}`}>
                   <div className="appointment-card-time">
+                    {appointmentFilter === 'all' && (
+                      <time className="appointment-card-date" dateTime={appointment.date} data-testid={`text-appointment-date-${appointment.id}`}>
+                        {formatAppointmentDate(appointment.date)}
+                      </time>
+                    )}
                     <time dateTime={`${appointment.date}T${appointment.time}`} data-testid={`text-appointment-time-${appointment.id}`}>{appointment.time}</time>
                     <span className="appointment-time-stem" aria-hidden="true" />
                   </div>
@@ -288,6 +341,7 @@ function Appointments() {
                         <h3 data-testid={`text-appointment-customer-${appointment.id}`}>{customer?.name || 'عميل غير متاح'}</h3>
                         <p data-testid={`text-appointment-service-${appointment.id}`}>{service?.name || 'خدمة غير متاحة'}</p>
                       </div>
+                      {isCancelled(appointment) && <span className="appointment-cancelled" data-testid={`text-appointment-status-${appointment.id}`}>ملغي</span>}
                     </div>
                     <div className="appointment-card-finances">
                       <span data-testid={`text-appointment-price-${appointment.id}`}>{money.format(price)}</span>

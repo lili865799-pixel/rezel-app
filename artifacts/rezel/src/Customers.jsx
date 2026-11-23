@@ -56,7 +56,7 @@ function CustomerForm({ onClose, onAdded }) {
   return (
     <dialog
       ref={dialogRef}
-      className="record-modal"
+      className="record-modal customer-form-modal"
       aria-labelledby="customer-form-title"
       data-testid="dialog-add-customer"
       onCancel={(event) => { event.preventDefault(); onClose(); }}
