@@ -1,20 +1,23 @@
 {
-  "name": "REZEL",
+  "name": "REZEL by BB ÉLITE",
   "short_name": "REZEL",
-  "description": "إدارة أعمالك اليومية بسهولة.",
-  "lang": "ar",
-  "dir": "rtl",
+  "description": "نظام إدارة المواعيد والحجوزات - BB ÉLITE",
   "start_url": "/",
-  "scope": "/",
   "display": "standalone",
   "background_color": "#F7F1E8",
-  "theme_color": "#F7F1E8",
+  "theme_color": "#3B302A",
+  "dir": "rtl",
+  "lang": "ar",
   "icons": [
     {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "/images/rezel-logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "/images/rezel-logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
     }
   ]
 }
