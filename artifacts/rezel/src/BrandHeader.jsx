@@ -1,19 +1,19 @@
 function BrandHeader({ onboarding = false }) {
   return (
-    <header className={`topbar${onboarding ? ' onboarding-topbar' : ''}`} aria-label="REZEL">
-      <span className="app-logo" role="img" aria-label="REZEL">
-        <span className="app-logo-fallback" aria-hidden="true">R</span>
+    <header className={`topbar${onboarding ? ' onboarding' : ''}`}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
         <img
-          src="/images/logo.png"
-          alt=""
-          width="38"
-          height="38"
-          onError={(event) => {
-            event.currentTarget.hidden = true;
+          src="/images/icon_png614.jpg"
+          alt="REZEL"
+          style={{
+            width: '45px',
+            height: '45px',
+            borderRadius: '50%',
+            objectFit: 'cover',
+            border: '2px solid #C6A15B'
           }}
         />
-      </span>
-      <span className="elite-mark" data-testid="text-elite-mark">BB ÉLITE</span>
+      </div>
     </header>
   );
 }
