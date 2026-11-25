@@ -4,6 +4,7 @@ import {
   getAllCustomers,
   getAllExpenses,
   getAllPayments,
+  getAllOrders,
   getAllServices,
 } from './db.js';
 
@@ -34,6 +35,9 @@ function paymentLocalDateKey(value) {
   if (typeof value !== 'string' && typeof value !== 'number' && !(value instanceof Date)) {
     return '';
   }
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
 
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? '' : localDateKey(date);
@@ -59,20 +63,22 @@ function Dashboard({ businessName, currentDate }) {
     expenses: [],
     payments: [],
     services: [],
+    orders: [],
   });
   const [status, setStatus] = useState('loading');
 
   const loadDashboard = useCallback(async () => {
     setStatus('loading');
     try {
-      const [appointments, payments, customers, services, expenses] = await Promise.all([
+      const [appointments, payments, customers, services, expenses, orders] = await Promise.all([
         getAllAppointments(),
         getAllPayments(),
         getAllCustomers(),
         getAllServices(),
         getAllExpenses(),
+        getAllOrders(),
       ]);
-      setRecords({ appointments, payments, customers, services, expenses });
+      setRecords({ appointments, payments, customers, services, expenses, orders });
       setStatus('ready');
     } catch {
       setStatus('error');
@@ -99,6 +105,11 @@ function Dashboard({ businessName, currentDate }) {
         payment.appointmentId,
         (paidByAppointmentCents.get(payment.appointmentId) || 0) + amountCents,
       );
+    }
+  });
+  records.orders.forEach((order) => {
+    if (paymentLocalDateKey(order.createdAt) === today) {
+      todaysRevenueCents += amountInCents(order.deposit);
     }
   });
   const pendingCents = todaysAppointments.reduce((total, appointment) => {

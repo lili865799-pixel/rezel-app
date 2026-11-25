@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { addService, getAllServices, softDeleteService } from './db.js';
+import { addService, getAllServices, softDeleteService, updateService } from './db.js';
 
 const dinarFormatter = new Intl.NumberFormat('ar-DZ', {
   style: 'currency',
@@ -7,11 +7,11 @@ const dinarFormatter = new Intl.NumberFormat('ar-DZ', {
   maximumFractionDigits: 2,
 });
 
-function ServiceForm({ onClose, onAdded }) {
+function ServiceForm({ service, onClose, onSaved }) {
   const dialogRef = useRef(null);
-  const [name, setName] = useState('');
-  const [price, setPrice] = useState('');
-  const [notes, setNotes] = useState('');
+  const [name, setName] = useState(service?.name || '');
+  const [price, setPrice] = useState(service ? String(service.price) : '');
+  const [notes, setNotes] = useState(service?.notes || '');
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -34,8 +34,10 @@ function ServiceForm({ onClose, onAdded }) {
     setSaving(true);
     setError('');
     try {
-      const service = await addService({ name: name.trim(), price: Number(price), duration: null, notes: notes.trim() });
-      onAdded(service);
+      const savedService = service
+        ? await updateService(service.id, { name: name.trim(), price: Number(price), duration: service.duration, notes: notes.trim() })
+        : await addService({ name: name.trim(), price: Number(price), duration: null, notes: notes.trim() });
+      onSaved(savedService);
     } catch {
       setError('تعذّر حفظ الخدمة. تحقق من البيانات وحاول مرة أخرى.');
       setSaving(false);
@@ -45,7 +47,7 @@ function ServiceForm({ onClose, onAdded }) {
   return (
     <dialog ref={dialogRef} className="record-modal service-form-modal" aria-labelledby="service-form-title" data-testid="dialog-add-service" onCancel={(event) => { event.preventDefault(); onClose(); }}>
       <div className="modal-topline">
-        <div><h2 className="modal-title" id="service-form-title">خدمة جديدة</h2><p className="modal-copy">أضف خدمة وسعراً واضحاً لقائمتك.</p></div>
+        <div><h2 className="modal-title" id="service-form-title">{service ? 'تعديل الخدمة' : 'خدمة جديدة'}</h2><p className="modal-copy">{service ? 'حدّث تفاصيل الخدمة وسعرها.' : 'أضف خدمة وسعراً واضحاً لقائمتك.'}</p></div>
         <button className="modal-close" type="button" aria-label="إغلاق" data-testid="button-close-service-form" onClick={onClose}>×</button>
       </div>
       <form className="record-form" onSubmit={submit} noValidate>
@@ -66,7 +68,7 @@ function ServiceForm({ onClose, onAdded }) {
         {error && <p className="records-error" role="alert" data-testid="status-service-save-error">{error}</p>}
         <div className="form-actions">
           <button className="cancel-button" type="button" data-testid="button-cancel-service" onClick={onClose}>إلغاء</button>
-          <button className="form-submit" type="submit" data-testid="button-submit-service" disabled={saving}>{saving ? 'جارٍ الحفظ…' : 'حفظ الخدمة'}</button>
+          <button className="form-submit" type="submit" data-testid="button-submit-service" disabled={saving}>{saving ? 'جارٍ الحفظ…' : service ? 'حفظ التعديلات' : 'حفظ الخدمة'}</button>
         </div>
       </form>
     </dialog>
@@ -97,6 +99,7 @@ function Services() {
   const [status, setStatus] = useState('loading');
   const [loadError, setLoadError] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [actionError, setActionError] = useState('');
@@ -115,9 +118,12 @@ function Services() {
   }
   useEffect(() => { loadServices(); }, []);
 
-  function addToList(service) {
-    setServices((current) => [service, ...current]);
+  function saveToList(service) {
+    setServices((current) => editing
+      ? current.map((item) => item.id === service.id ? service : item)
+      : [service, ...current]);
     setShowForm(false);
+    setEditing(null);
     setActionError('');
   }
 
@@ -168,12 +174,15 @@ function Services() {
                 <span className="record-avatar" aria-hidden="true">دج</span>
                 <div className="record-details"><h2 className="record-name" data-testid={`text-service-name-${service.id}`}>{service.name}</h2><span className="record-price" data-testid={`text-service-price-${service.id}`}>{dinarFormatter.format(service.price)}</span></div>
               </div>
+              <div className="record-actions">
+                <button className="record-edit" type="button" aria-label={`تعديل ${service.name}`} data-testid={`button-edit-service-${service.id}`} onClick={() => { setActionError(''); setEditing(service); setShowForm(true); }}>✏️</button>
               <button className="record-delete" type="button" aria-label={`حذف ${service.name}`} data-testid={`button-delete-service-${service.id}`} onClick={() => setDeleting(service)}><span aria-hidden="true">×</span></button>
+              </div>
             </article>
           ))}
         </section>
       )}
-      {showForm && <ServiceForm onClose={() => setShowForm(false)} onAdded={addToList} />}
+      {showForm && <ServiceForm service={editing} onClose={() => { setShowForm(false); setEditing(null); }} onSaved={saveToList} />}
       {deleting && <DeleteServiceDialog service={deleting} busy={deleteBusy} onClose={() => !deleteBusy && setDeleting(null)} onConfirm={confirmDelete} />}
     </main>
   );

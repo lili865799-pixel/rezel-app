@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  addPayment,
   addAppointmentWithDeposit,
   getAllAppointments,
   getAllCustomers,
   getAllPayments,
   getAllServices,
+  updateAppointment,
 } from './db.js';
+import PaymentLedger from './PaymentLedger.jsx';
 
 const money = new Intl.NumberFormat('ar-DZ', {
   style: 'currency',
@@ -41,14 +44,14 @@ function formatAppointmentDate(date) {
   }).format(new Date(year, month - 1, day, 12));
 }
 
-function AppointmentForm({ customers, services, onClose, onBooked }) {
+function AppointmentForm({ appointment, customers, services, onClose, onSaved }) {
   const dialogRef = useRef(null);
-  const [customerId, setCustomerId] = useState('');
-  const [serviceId, setServiceId] = useState('');
-  const [date, setDate] = useState(localDateKey());
-  const [time, setTime] = useState('09:00');
+  const [customerId, setCustomerId] = useState(appointment?.customerId || '');
+  const [serviceId, setServiceId] = useState(appointment?.serviceId || '');
+  const [date, setDate] = useState(appointment?.date || localDateKey());
+  const [time, setTime] = useState(appointment?.time || '09:00');
   const [depositAmount, setDepositAmount] = useState('0');
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(appointment?.notes || '');
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -75,9 +78,9 @@ function AppointmentForm({ customers, services, onClose, onBooked }) {
     if (!serviceId) nextErrors.serviceId = 'اختر الخدمة.';
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) nextErrors.date = 'اختر تاريخاً صحيحاً.';
     if (!time || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) nextErrors.time = 'اختر وقتاً صحيحاً.';
-    if (depositAmount === '' || !Number.isFinite(deposit) || deposit < 0) {
+    if (!appointment && (depositAmount === '' || !Number.isFinite(deposit) || deposit < 0)) {
       nextErrors.depositAmount = 'أدخل مبلغاً صحيحاً لا يقل عن صفر.';
-    } else if (selectedService && deposit > Number(selectedService.price)) {
+    } else if (!appointment && selectedService && deposit > Number(selectedService.price)) {
       nextErrors.depositAmount = 'لا يمكن أن يتجاوز العربون سعر الخدمة.';
     }
     setErrors(nextErrors);
@@ -86,17 +89,29 @@ function AppointmentForm({ customers, services, onClose, onBooked }) {
     setSaving(true);
     setSaveError('');
     try {
-      await addAppointmentWithDeposit({
-        customerId,
-        serviceId,
-        date,
-        time,
-        depositAmount: deposit,
-        notes: notes.trim(),
-      });
-      await onBooked();
-    } catch {
-      setSaveError('تعذّر حفظ الموعد. تحقّق من البيانات وحاول مرة أخرى.');
+      if (appointment) {
+        await updateAppointment(appointment.id, {
+          customerId,
+          serviceId,
+          date,
+          time,
+          notes: notes.trim(),
+        });
+      } else {
+        await addAppointmentWithDeposit({
+          customerId,
+          serviceId,
+          date,
+          time,
+          depositAmount: deposit,
+          notes: notes.trim(),
+        });
+      }
+      await onSaved();
+    } catch (error) {
+      setSaveError(error instanceof RangeError
+        ? 'لا يمكن أن يكون سعر الخدمة أقل من الدفعات المسجلة.'
+        : 'تعذّر حفظ الموعد. تحقّق من البيانات وحاول مرة أخرى.');
       setSaving(false);
     }
   }
@@ -106,14 +121,14 @@ function AppointmentForm({ customers, services, onClose, onBooked }) {
       ref={dialogRef}
       className="record-modal appointment-modal"
       aria-labelledby="appointment-form-title"
-      data-testid="dialog-add-appointment"
+      data-testid={appointment ? 'dialog-edit-appointment' : 'dialog-add-appointment'}
       onCancel={(event) => { event.preventDefault(); if (!saving) onClose(); }}
     >
       <div className="modal-topline">
         <div>
-          <span className="eyebrow">موعد جديد</span>
-          <h2 className="modal-title" id="appointment-form-title">رتّب زيارة جديدة</h2>
-          <p className="modal-copy">خطوة سريعة، ويصبح يومك أوضح.</p>
+          <span className="eyebrow">{appointment ? 'تعديل الموعد' : 'موعد جديد'}</span>
+          <h2 className="modal-title" id="appointment-form-title">{appointment ? 'حدّث تفاصيل الموعد' : 'رتّب زيارة جديدة'}</h2>
+          <p className="modal-copy">{appointment ? 'ستبقى الدفعات المسجلة مرتبطة بهذا الموعد.' : 'خطوة سريعة، ويصبح يومك أوضح.'}</p>
         </div>
         <button className="modal-close" type="button" aria-label="إغلاق" data-testid="button-close-appointment-form" onClick={onClose}>×</button>
       </div>
@@ -150,14 +165,14 @@ function AppointmentForm({ customers, services, onClose, onBooked }) {
             {errors.time && <span className="field-error" id="appointment-time-error">{errors.time}</span>}
           </div>
         </div>
-        <div className="form-field">
+        {!appointment && <div className="form-field">
           <label htmlFor="appointment-deposit">العربون</label>
           <div className="deposit-input-wrap">
             <input id="appointment-deposit" data-testid="input-appointment-deposit" type="number" inputMode="decimal" min="0" max={selectedService ? Number(selectedService.price) : undefined} step="any" value={depositAmount} onChange={(event) => setDepositAmount(event.target.value)} aria-invalid={Boolean(errors.depositAmount)} aria-describedby={errors.depositAmount ? 'appointment-deposit-error' : 'appointment-deposit-hint'} />
             <span aria-hidden="true">دج</span>
           </div>
           {errors.depositAmount ? <span className="field-error" id="appointment-deposit-error">{errors.depositAmount}</span> : <span className="field-hint" id="appointment-deposit-hint">يمكن تسجيل عربون بقيمة صفر، وبحد أقصى سعر الخدمة.</span>}
-        </div>
+        </div>}
         <div className="form-field">
           <label htmlFor="appointment-notes">ملاحظات <span className="field-hint">(اختياري)</span></label>
           <textarea id="appointment-notes" data-testid="input-appointment-notes" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={500} />
@@ -166,10 +181,44 @@ function AppointmentForm({ customers, services, onClose, onBooked }) {
         <div className="form-actions">
           <button className="cancel-button" type="button" data-testid="button-cancel-appointment" onClick={onClose} disabled={saving}>إلغاء</button>
           <button className="form-submit" type="submit" data-testid="button-submit-appointment" disabled={saving}>
-            {saving ? 'جارٍ حفظ الموعد…' : 'تأكيد الموعد'}
+            {saving ? 'جارٍ الحفظ…' : appointment ? 'حفظ التعديلات' : 'تأكيد الموعد'}
           </button>
         </div>
       </form>
+    </dialog>
+  );
+}
+
+function AppointmentDetails({ appointment, customer, service, payments, onClose, onAddPayment }) {
+  const dialogRef = useRef(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => { if (dialog?.open) dialog.close(); };
+  }, []);
+
+  return (
+    <dialog ref={dialogRef} className="record-modal detail-modal" aria-labelledby="appointment-details-title" data-testid="dialog-appointment-details" onCancel={(event) => { event.preventDefault(); onClose(); }}>
+      <div className="modal-topline">
+        <div>
+          <span className="eyebrow">تفاصيل الموعد</span>
+          <h2 className="modal-title" id="appointment-details-title">{customer?.name || 'عميل غير متاح'}</h2>
+          <p className="modal-copy">{service?.name || 'خدمة غير متاحة'} · {formatAppointmentDate(appointment.date)} · {appointment.time}</p>
+        </div>
+        <button className="modal-close" type="button" aria-label="إغلاق" onClick={onClose}>×</button>
+      </div>
+      {appointment.notes && <p className="detail-notes">{appointment.notes}</p>}
+      <PaymentLedger
+        recordId={appointment.id}
+        type="appointment"
+        title={`الموعد ${customer?.name || ''}`}
+        price={appointment.price}
+        payments={payments}
+        onAddPayment={onAddPayment}
+      />
+      <div className="form-actions detail-actions">
+        <button className="cancel-button" type="button" onClick={onClose}>إغلاق</button>
+      </div>
     </dialog>
   );
 }
@@ -183,6 +232,8 @@ function Appointments() {
   });
   const [status, setStatus] = useState('loading');
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState(null);
   const [appointmentFilter, setAppointmentFilter] = useState('today');
 
   const loadRecords = useCallback(async () => {
@@ -225,9 +276,23 @@ function Appointments() {
   }, [records.payments]);
   const missingSetup = records.customers.length === 0 || records.services.length === 0;
 
-  async function booked() {
+  async function saved() {
     await loadRecords();
     setShowForm(false);
+    setEditing(null);
+  }
+
+  const selectedAppointment = records.appointments.find((item) => item.id === selectedAppointmentId);
+  const selectedAppointmentPayments = selectedAppointment
+    ? records.payments.filter((payment) => payment.appointmentId === selectedAppointment.id)
+    : [];
+
+  async function savePayment(paymentDetails) {
+    await addPayment({
+      appointmentId: selectedAppointmentId,
+      ...paymentDetails,
+    });
+    await loadRecords();
   }
 
   return (
@@ -349,6 +414,10 @@ function Appointments() {
                         المتبقي <strong>{money.format(due)}</strong>
                       </span>
                     </div>
+                    <div className="record-actions appointment-card-actions">
+                      <button className="record-action-link" type="button" data-testid={`button-details-appointment-${appointment.id}`} onClick={() => setSelectedAppointmentId(appointment.id)}>تفاصيل الدفعات</button>
+                      <button className="record-edit" type="button" aria-label={`تعديل موعد ${customer?.name || ''}`} data-testid={`button-edit-appointment-${appointment.id}`} onClick={() => { setEditing(appointment); setShowForm(true); }}>✏️</button>
+                    </div>
                   </div>
                 </article>
               );
@@ -362,7 +431,17 @@ function Appointments() {
           <span aria-hidden="true">+</span>
         </button>
       )}
-      {showForm && <AppointmentForm customers={records.customers} services={records.services} onClose={() => setShowForm(false)} onBooked={booked} />}
+      {showForm && <AppointmentForm appointment={editing} customers={records.customers} services={records.services} onClose={() => { setShowForm(false); setEditing(null); }} onSaved={saved} />}
+      {selectedAppointment && (
+        <AppointmentDetails
+          appointment={selectedAppointment}
+          customer={customersById.get(selectedAppointment.customerId)}
+          service={servicesById.get(selectedAppointment.serviceId)}
+          payments={selectedAppointmentPayments}
+          onClose={() => setSelectedAppointmentId(null)}
+          onAddPayment={savePayment}
+        />
+      )}
     </main>
   );
 }

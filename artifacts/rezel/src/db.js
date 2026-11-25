@@ -138,6 +138,29 @@ export async function softDeleteCustomer(id) {
   return softDeleteRecord(CUSTOMERS_STORE, id);
 }
 
+export async function updateCustomer(id, { name, phone, notes = '' }) {
+  const recordId = requireText(id, 'Customer ID');
+  const updatedFields = {
+    name: requireText(name, 'Customer name'),
+    phone: requireText(phone, 'Customer phone'),
+    notes: optionalText(notes),
+  };
+  const database = await getDatabase();
+  const transaction = database.transaction(CUSTOMERS_STORE, 'readwrite');
+  const store = transaction.objectStore(CUSTOMERS_STORE);
+  const customer = await store.get(recordId);
+
+  if (!customer || customer.deletedAt) {
+    await transaction.done;
+    throw new Error('The customer is no longer available.');
+  }
+
+  const updatedCustomer = { ...customer, ...updatedFields };
+  await store.put(updatedCustomer);
+  await transaction.done;
+  return updatedCustomer;
+}
+
 export async function addService({
   name,
   price,
@@ -184,6 +207,42 @@ export async function getAllServices() {
 
 export async function softDeleteService(id) {
   return softDeleteRecord(SERVICES_STORE, id);
+}
+
+export async function updateService(id, { name, price, duration = null, notes = '' }) {
+  const recordId = requireText(id, 'Service ID');
+  const parsedPrice = Number(price);
+  if (price === null || price === undefined || price === '' || !Number.isFinite(parsedPrice) || parsedPrice < 0) {
+    throw new TypeError('Service price must be a non-negative number.');
+  }
+
+  let parsedDuration = null;
+  if (duration !== null && duration !== undefined && duration !== '') {
+    parsedDuration = Number(duration);
+    if (!Number.isFinite(parsedDuration) || parsedDuration < 0) {
+      throw new TypeError('Service duration must be a non-negative number.');
+    }
+  }
+
+  const database = await getDatabase();
+  const transaction = database.transaction(SERVICES_STORE, 'readwrite');
+  const store = transaction.objectStore(SERVICES_STORE);
+  const service = await store.get(recordId);
+  if (!service || service.deletedAt) {
+    await transaction.done;
+    throw new Error('The service is no longer available.');
+  }
+
+  const updatedService = {
+    ...service,
+    name: requireText(name, 'Service name'),
+    price: parsedPrice,
+    duration: parsedDuration,
+    notes: optionalText(notes),
+  };
+  await store.put(updatedService);
+  await transaction.done;
+  return updatedService;
 }
 
 function requireDate(value, fieldName = 'Date') {
@@ -325,6 +384,92 @@ export async function addAppointmentWithDeposit({
   }
 }
 
+export async function updateAppointment(id, {
+  customerId,
+  serviceId,
+  date,
+  time,
+  notes = '',
+}) {
+  const recordId = requireText(id, 'Appointment ID');
+  const selectedCustomerId = requireText(customerId, 'Customer');
+  const selectedServiceId = requireText(serviceId, 'Service');
+  const appointmentDate = requireDate(date, 'Appointment date');
+  const appointmentTime = requireTime(time);
+  const database = await getDatabase();
+  const transaction = database.transaction(
+    [CUSTOMERS_STORE, SERVICES_STORE, APPOINTMENTS_STORE, PAYMENTS_STORE],
+    'readwrite',
+  );
+  const transactionDone = transaction.done;
+
+  try {
+    const [customer, service, appointment, payments] = await Promise.all([
+      transaction.objectStore(CUSTOMERS_STORE).get(selectedCustomerId),
+      transaction.objectStore(SERVICES_STORE).get(selectedServiceId),
+      transaction.objectStore(APPOINTMENTS_STORE).get(recordId),
+      transaction.objectStore(PAYMENTS_STORE).getAll(),
+    ]);
+    if (!customer || customer.deletedAt) {
+      throw new Error('The selected customer is no longer available.');
+    }
+    if (!service || service.deletedAt) {
+      throw new Error('The selected service is no longer available.');
+    }
+    if (!appointment || isRecordDeleted(appointment)) {
+      throw new Error('The appointment is no longer available.');
+    }
+
+    const price = Number(service.price);
+    const alreadyPaidCents = payments
+      .filter((payment) => payment.appointmentId === recordId)
+      .reduce((total, payment) => total + storedCents(payment.amount), 0);
+    if (!Number.isFinite(price) || Math.round(price * 100) < alreadyPaidCents) {
+      throw new RangeError('The service price cannot be lower than the amount already paid.');
+    }
+
+    const updatedAppointment = {
+      ...appointment,
+      customerId: selectedCustomerId,
+      serviceId: selectedServiceId,
+      date: appointmentDate,
+      time: appointmentTime,
+      price,
+      notes: optionalText(notes),
+    };
+    await transaction.objectStore(APPOINTMENTS_STORE).put(updatedAppointment);
+    await transactionDone;
+    return updatedAppointment;
+  } catch (error) {
+    try {
+      transaction.abort();
+    } catch {
+      // The transaction may already have completed or aborted.
+    }
+    try {
+      await transactionDone;
+    } catch {
+      // Consume the aborted transaction rejection before reporting the cause.
+    }
+    throw error;
+  }
+}
+
+function isRecordDeleted(record) {
+  return Boolean(record.deletedAt);
+}
+
+function safeStoredAmount(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0
+    ? Math.round(amount * 100) / 100
+    : 0;
+}
+
+function storedCents(value) {
+  return Math.round(safeStoredAmount(value) * 100);
+}
+
 export async function getAllExpenses() {
   const database = await getDatabase();
   const expenses = await database.getAll(EXPENSES_STORE);
@@ -437,6 +582,176 @@ export async function addOrder({
     await transaction.objectStore(ORDERS_STORE).add(order);
     await transactionDone;
     return order;
+  } catch (error) {
+    try {
+      transaction.abort();
+    } catch {
+      // The transaction may already have completed or aborted.
+    }
+    try {
+      await transactionDone;
+    } catch {
+      // Consume the aborted transaction rejection before reporting the cause.
+    }
+    throw error;
+  }
+}
+
+export async function updateOrder(id, {
+  customerId,
+  description,
+  price,
+  deposit,
+  dueDate,
+  status = 'new',
+  notes = '',
+}) {
+  const recordId = requireText(id, 'Order ID');
+  const selectedCustomerId = requireText(customerId, 'Customer');
+  const orderDescription = requireText(description, 'Order description');
+  const parsedPrice = Number(price);
+  const parsedDeposit = Number(deposit);
+  const orderDueDate = requireDate(dueDate, 'Order due date');
+
+  if (price === null || price === undefined || price === '' || !Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+    throw new TypeError('Order price must be a positive number.');
+  }
+  if (deposit === null || deposit === undefined || deposit === '' || !Number.isFinite(parsedDeposit) || parsedDeposit < 0 || parsedDeposit > parsedPrice) {
+    throw new TypeError('Order deposit must be between zero and the order price.');
+  }
+  if (!ORDER_STATUSES.has(status)) {
+    throw new TypeError('Order status is invalid.');
+  }
+
+  const database = await getDatabase();
+  const transaction = database.transaction(
+    [CUSTOMERS_STORE, ORDERS_STORE, PAYMENTS_STORE],
+    'readwrite',
+  );
+  const transactionDone = transaction.done;
+
+  try {
+    const [customer, order, payments] = await Promise.all([
+      transaction.objectStore(CUSTOMERS_STORE).get(selectedCustomerId),
+      transaction.objectStore(ORDERS_STORE).get(recordId),
+      transaction.objectStore(PAYMENTS_STORE).getAll(),
+    ]);
+    if (!customer || customer.deletedAt) {
+      throw new Error('The selected customer is no longer available.');
+    }
+    if (!order) {
+      throw new Error('The order is no longer available.');
+    }
+    const additionalPaidCents = payments
+      .filter((payment) => payment.orderId === recordId)
+      .reduce((total, payment) => total + storedCents(payment.amount), 0);
+    if (Math.round(parsedDeposit * 100) + additionalPaidCents > Math.round(parsedPrice * 100)) {
+      throw new RangeError('Price cannot be lower than the deposit and payments already recorded.');
+    }
+
+    const updatedOrder = {
+      ...order,
+      customerId: selectedCustomerId,
+      description: orderDescription,
+      price: parsedPrice,
+      deposit: parsedDeposit,
+      dueDate: orderDueDate,
+      status,
+      notes: optionalText(notes),
+    };
+    await transaction.objectStore(ORDERS_STORE).put(updatedOrder);
+    await transactionDone;
+    return updatedOrder;
+  } catch (error) {
+    try {
+      transaction.abort();
+    } catch {
+      // The transaction may already have completed or aborted.
+    }
+    try {
+      await transactionDone;
+    } catch {
+      // Consume the aborted transaction rejection before reporting the cause.
+    }
+    throw error;
+  }
+}
+
+function requirePaymentDate(value) {
+  if (value === undefined || value === null || value === '') {
+    return new Date().toISOString();
+  }
+  return requireDate(value, 'Payment date');
+}
+
+export async function addPayment({
+  appointmentId,
+  orderId,
+  amount,
+  date,
+  notes = '',
+}) {
+  const hasAppointment = typeof appointmentId === 'string' && appointmentId.trim().length > 0;
+  const hasOrder = typeof orderId === 'string' && orderId.trim().length > 0;
+  if (hasAppointment === hasOrder) {
+    throw new TypeError('A payment must belong to exactly one appointment or order.');
+  }
+  const relatedId = requireText(hasAppointment ? appointmentId : orderId, 'Record ID');
+  const parsedAmount = Number(amount);
+  if (amount === null || amount === undefined || amount === '' || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+    throw new TypeError('Payment amount must be a positive number.');
+  }
+  const paymentAmount = Math.round(parsedAmount * 100) / 100;
+  const paymentDate = requirePaymentDate(date);
+  const database = await getDatabase();
+  const entityStoreName = hasAppointment ? APPOINTMENTS_STORE : ORDERS_STORE;
+  const transaction = database.transaction(
+    [entityStoreName, PAYMENTS_STORE],
+    'readwrite',
+  );
+  const transactionDone = transaction.done;
+
+  try {
+    const entityStore = transaction.objectStore(entityStoreName);
+    const paymentStore = transaction.objectStore(PAYMENTS_STORE);
+    const [entity, payments] = await Promise.all([
+      entityStore.get(relatedId),
+      paymentStore.getAll(),
+    ]);
+    if (!entity || entity.deletedAt) {
+      throw new Error('The appointment or order is no longer available.');
+    }
+    if (hasAppointment && ['cancelled', 'canceled', 'ملغي'].includes(String(entity.status || '').toLowerCase())) {
+      throw new Error('Payments cannot be added to a cancelled appointment.');
+    }
+
+    const linkedPayments = payments.filter((payment) => (
+      hasAppointment
+        ? payment.appointmentId === relatedId
+        : payment.orderId === relatedId
+    ));
+    const amountAlreadyPaidCents = linkedPayments.reduce(
+      (total, payment) => total + storedCents(payment.amount),
+      hasOrder ? storedCents(entity.deposit) : 0,
+    );
+    const remainingCents = Math.max(storedCents(entity.price) - amountAlreadyPaidCents, 0);
+    if (paymentAmount <= 0 || Math.round(paymentAmount * 100) > remainingCents) {
+      throw new RangeError('Payment cannot be greater than the remaining balance.');
+    }
+
+    const payment = {
+      id: createRecordId(),
+      ...(hasAppointment ? { appointmentId: relatedId } : { orderId: relatedId }),
+      customerId: entity.customerId,
+      amount: paymentAmount,
+      type: hasAppointment ? 'appointment_payment' : 'order_payment',
+      date: paymentDate,
+      notes: optionalText(notes),
+      createdAt: new Date().toISOString(),
+    };
+    await paymentStore.add(payment);
+    await transactionDone;
+    return payment;
   } catch (error) {
     try {
       transaction.abort();

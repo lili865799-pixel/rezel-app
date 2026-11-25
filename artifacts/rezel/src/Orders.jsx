@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { addOrder, getAllCustomers, getAllOrders } from './db.js';
+import { addPayment, addOrder, getAllCustomers, getAllOrders, getAllPayments, updateOrder } from './db.js';
+import PaymentLedger from './PaymentLedger.jsx';
 
 const money = new Intl.NumberFormat('ar-DZ', {
   style: 'currency',
@@ -31,15 +32,15 @@ function formatDate(dateKey) {
   }).format(new Date(year, month - 1, day));
 }
 
-function OrderForm({ customers, onClose, onAdded }) {
+function OrderForm({ order, customers, onClose, onSaved }) {
   const dialogRef = useRef(null);
-  const [customerId, setCustomerId] = useState('');
-  const [description, setDescription] = useState('');
-  const [price, setPrice] = useState('');
-  const [deposit, setDeposit] = useState('0');
-  const [dueDate, setDueDate] = useState(localDateKey());
-  const [status, setStatus] = useState('new');
-  const [notes, setNotes] = useState('');
+  const [customerId, setCustomerId] = useState(order?.customerId || '');
+  const [description, setDescription] = useState(order?.description || '');
+  const [price, setPrice] = useState(order ? String(order.price) : '');
+  const [deposit, setDeposit] = useState(order ? String(order.deposit) : '0');
+  const [dueDate, setDueDate] = useState(order?.dueDate || localDateKey());
+  const [status, setStatus] = useState(order?.status || 'new');
+  const [notes, setNotes] = useState(order?.notes || '');
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -76,18 +77,30 @@ function OrderForm({ customers, onClose, onAdded }) {
     setSaving(true);
     setSaveError('');
     try {
-      const order = await addOrder({
-        customerId,
-        description: description.trim(),
-        price: parsedPrice,
-        deposit: parsedDeposit,
-        dueDate,
-        status,
-        notes: notes.trim(),
-      });
-      onAdded(order);
-    } catch {
-      setSaveError('تعذّر حفظ الطلب. تحقق من البيانات وحاول مرة أخرى.');
+      const savedOrder = order
+        ? await updateOrder(order.id, {
+          customerId,
+          description: description.trim(),
+          price: parsedPrice,
+          deposit: parsedDeposit,
+          dueDate,
+          status,
+          notes: notes.trim(),
+        })
+        : await addOrder({
+          customerId,
+          description: description.trim(),
+          price: parsedPrice,
+          deposit: parsedDeposit,
+          dueDate,
+          status,
+          notes: notes.trim(),
+        });
+      onSaved(savedOrder);
+    } catch (error) {
+      setSaveError(error instanceof RangeError
+        ? 'السعر لا يمكن أن يقل عن العربون والدفعات المسجلة.'
+        : 'تعذّر حفظ الطلب. تحقق من البيانات وحاول مرة أخرى.');
       setSaving(false);
     }
   }
@@ -97,7 +110,7 @@ function OrderForm({ customers, onClose, onAdded }) {
       ref={dialogRef}
       className="record-modal order-modal"
       aria-labelledby="order-form-title"
-      data-testid="dialog-add-order"
+      data-testid={order ? 'dialog-edit-order' : 'dialog-add-order'}
       onCancel={(event) => {
         event.preventDefault();
         if (!saving) onClose();
@@ -105,9 +118,9 @@ function OrderForm({ customers, onClose, onAdded }) {
     >
       <div className="modal-topline">
         <div>
-          <span className="eyebrow">طلب خاص</span>
-          <h2 className="modal-title" id="order-form-title">طلب جديد</h2>
-          <p className="modal-copy">احتفظ بالتفاصيل وموعد التسليم في مكان واحد.</p>
+          <span className="eyebrow">{order ? 'تعديل الطلب' : 'طلب خاص'}</span>
+          <h2 className="modal-title" id="order-form-title">{order ? 'حدّث تفاصيل الطلب' : 'طلب جديد'}</h2>
+          <p className="modal-copy">{order ? 'ستبقى الدفعات المسجلة مرتبطة بهذا الطلب.' : 'احتفظ بالتفاصيل وموعد التسليم في مكان واحد.'}</p>
         </div>
         <button
           className="modal-close"
@@ -241,7 +254,7 @@ function OrderForm({ customers, onClose, onAdded }) {
         <div className="form-actions">
           <button className="cancel-button" type="button" data-testid="button-cancel-order" onClick={onClose} disabled={saving}>إلغاء</button>
           <button className="form-submit" type="submit" data-testid="button-submit-order" disabled={saving}>
-            {saving ? 'جارٍ الحفظ…' : 'حفظ الطلب'}
+            {saving ? 'جارٍ الحفظ…' : order ? 'حفظ التعديلات' : 'حفظ الطلب'}
           </button>
         </div>
       </form>
@@ -249,21 +262,63 @@ function OrderForm({ customers, onClose, onAdded }) {
   );
 }
 
+function OrderDetails({ order, customer, payments, onClose, onAddPayment }) {
+  const dialogRef = useRef(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => { if (dialog?.open) dialog.close(); };
+  }, []);
+  const currentStatus = orderStatuses.find((item) => item.value === order.status);
+
+  return (
+    <dialog ref={dialogRef} className="record-modal detail-modal" aria-labelledby="order-details-title" data-testid="dialog-order-details" onCancel={(event) => { event.preventDefault(); onClose(); }}>
+      <div className="modal-topline">
+        <div>
+          <span className="eyebrow">تفاصيل الطلب</span>
+          <h2 className="modal-title" id="order-details-title">{customer?.name || 'عميل غير متاح'}</h2>
+          <p className="modal-copy">{order.description} · التسليم {formatDate(order.dueDate)}</p>
+        </div>
+        <button className="modal-close" type="button" aria-label="إغلاق" onClick={onClose}>×</button>
+      </div>
+      <div className="order-detail-status"><span>الحالة</span><strong className={`order-status order-status-${order.status}`}>{currentStatus?.label || 'جديد'}</strong></div>
+      {order.notes && <p className="detail-notes">{order.notes}</p>}
+      <PaymentLedger
+        recordId={order.id}
+        type="order"
+        title={`الطلب ${order.description}`}
+        price={order.price}
+        initialDeposit={order.deposit}
+        payments={payments}
+        onAddPayment={onAddPayment}
+      />
+      <div className="form-actions detail-actions">
+        <button className="cancel-button" type="button" onClick={onClose}>إغلاق</button>
+      </div>
+    </dialog>
+  );
+}
+
 function Orders() {
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [status, setStatus] = useState('loading');
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
 
   const loadOrders = useCallback(async () => {
     setStatus('loading');
     try {
-      const [savedOrders, savedCustomers] = await Promise.all([
+      const [savedOrders, savedCustomers, savedPayments] = await Promise.all([
         getAllOrders(),
         getAllCustomers(),
+        getAllPayments(),
       ]);
       setOrders(Array.isArray(savedOrders) ? savedOrders : []);
       setCustomers(Array.isArray(savedCustomers) ? savedCustomers : []);
+      setPayments(Array.isArray(savedPayments) ? savedPayments : []);
       setStatus('ready');
     } catch {
       setStatus('error');
@@ -274,11 +329,27 @@ function Orders() {
     loadOrders();
   }, [loadOrders]);
 
-  function addToList(order) {
-    setOrders((current) => [order, ...current].sort(
-      (a, b) => a.dueDate.localeCompare(b.dueDate) || b.createdAt.localeCompare(a.createdAt),
-    ));
+  function saveToList(order) {
+    setOrders((current) => (editing
+      ? current.map((item) => item.id === order.id ? order : item)
+      : [order, ...current]).sort(
+        (a, b) => a.dueDate.localeCompare(b.dueDate) || b.createdAt.localeCompare(a.createdAt),
+      ));
     setShowForm(false);
+    setEditing(null);
+  }
+
+  const selectedOrder = orders.find((item) => item.id === selectedOrderId);
+  const selectedOrderPayments = selectedOrder
+    ? payments.filter((payment) => payment.orderId === selectedOrder.id)
+    : [];
+
+  async function savePayment(paymentDetails) {
+    await addPayment({
+      orderId: selectedOrderId,
+      ...paymentDetails,
+    });
+    await loadOrders();
   }
 
   const customersById = new Map(customers.map((customer) => [customer.id, customer]));
@@ -345,6 +416,10 @@ function Orders() {
                     <time dateTime={order.dueDate} data-testid={`text-order-due-date-${order.id}`}>التسليم {formatDate(order.dueDate)}</time>
                     <span data-testid={`text-order-deposit-${order.id}`}>العربون {money.format(order.deposit)}</span>
                   </div>
+                  <div className="record-actions order-card-actions">
+                    <button className="record-action-link" type="button" data-testid={`button-details-order-${order.id}`} onClick={() => setSelectedOrderId(order.id)}>التفاصيل والدفعات</button>
+                    <button className="record-edit" type="button" aria-label={`تعديل طلب ${order.description}`} data-testid={`button-edit-order-${order.id}`} onClick={() => { setEditing(order); setShowForm(true); }}>✏️</button>
+                  </div>
                 </div>
                 <strong className="order-record-price" data-testid={`text-order-price-${order.id}`}>{money.format(order.price)}</strong>
               </article>
@@ -359,12 +434,21 @@ function Orders() {
           type="button"
           aria-label="إضافة طلب"
           data-testid="button-add-order"
-          onClick={() => setShowForm(true)}
+          onClick={() => { setEditing(null); setShowForm(true); }}
         >
           <span aria-hidden="true">+</span>
         </button>
       )}
-      {showForm && <OrderForm customers={customers} onClose={() => setShowForm(false)} onAdded={addToList} />}
+      {showForm && <OrderForm order={editing} customers={customers} onClose={() => { setShowForm(false); setEditing(null); }} onSaved={saveToList} />}
+      {selectedOrder && (
+        <OrderDetails
+          order={selectedOrder}
+          customer={customersById.get(selectedOrder.customerId)}
+          payments={selectedOrderPayments}
+          onClose={() => setSelectedOrderId(null)}
+          onAddPayment={savePayment}
+        />
+      )}
     </main>
   );
 }

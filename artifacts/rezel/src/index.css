@@ -455,6 +455,19 @@ button:focus-visible, a:focus-visible { outline: 3px solid rgba(198,161,91,.58);
   cursor: pointer; font-family: sans-serif; font-size: 19px; transition: background-color 150ms ease, color 150ms ease;
 }
 .record-delete:hover { border-color: #ead9d2; background: #fbf0eb; color: #8d493d; }
+.record-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.record-edit {
+  display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center;
+  border: 1px solid transparent; border-radius: 11px; background: transparent; color: #80653d;
+  cursor: pointer; font-size: 15px; transition: border-color 150ms ease, background-color 150ms ease, transform 150ms ease;
+}
+.record-edit:hover { border-color: #eadcc2; background: #fbf5e9; transform: translateY(-1px); }
+.record-action-link {
+  min-height: 31px; padding: 5px 9px; border: 1px solid #e5d5b7; border-radius: 9px;
+  background: #fbf6eb; color: #775d35; cursor: pointer; font: inherit; font-size: 10px; font-weight: 700;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.record-action-link:hover { border-color: var(--gold); background: #f6eedf; }
 .records-empty, .records-loading, .records-error {
   margin-top: 22px; padding: 28px 22px; border: 1px solid var(--line); border-radius: 19px;
   background: rgba(255,253,249,.87); text-align: center; box-shadow: var(--shadow);
@@ -714,6 +727,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid rgba(198,161,91,.58);
 .appointment-card-names p { overflow: hidden; margin: 3px 0 0; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .appointment-cancelled { flex: 0 0 auto; padding: 3px 7px; border: 1px solid #ead0c9; border-radius: 99px; background: #fbf0eb; color: #8d493d; font-size: 9px; font-weight: 700; }
 .appointment-card-finances { display: flex; align-items: center; justify-content: space-between; gap: 5px; margin-top: 11px; padding-top: 9px; border-top: 1px solid #eee6da; color: #725a36; font-size: 11px; font-weight: 700; }
+.appointment-card-actions { justify-content: flex-start; margin-top: 8px; }
 .appointment-due { color: #8b8175; font-size: 10px; font-weight: 500; }
 .appointment-due strong { margin-right: 3px; color: #725a36; font-size: 11px; font-weight: 700; }
 .appointment-modal { padding-top: 21px; }
@@ -836,6 +850,38 @@ button:focus-visible, a:focus-visible { outline: 3px solid rgba(198,161,91,.58);
 .order-record-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; margin-top: 8px; color: var(--muted); font-size: 9px; }
 .order-record-meta time { display: inline; margin: 0; font-size: inherit; }
 .order-record-price { flex: 0 0 auto; padding-top: 2px; color: #70552f; font-size: 11px; }
+.order-card-actions { margin-top: 7px; }
+.detail-modal { padding-top: 21px; }
+.detail-modal .modal-topline { margin-bottom: 14px; }
+.detail-modal .form-actions { margin-top: 14px; }
+.detail-notes { margin: 0 0 13px; padding: 10px 12px; border: 1px solid #eee4d5; border-radius: 11px; background: #faf6ee; color: #6d6054; font-size: 11px; line-height: 1.8; white-space: pre-wrap; }
+.order-detail-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 13px; color: var(--muted); font-size: 11px; }
+.payment-ledger { display: grid; gap: 13px; }
+.payment-balance { display: grid; gap: 0; overflow: hidden; border: 1px solid #e9dfd0; border-radius: 13px; background: #fbf8f2; }
+.payment-balance > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; color: #786d62; font-size: 11px; }
+.payment-balance > div + div { border-top: 1px solid #eee6da; }
+.payment-balance strong { color: var(--brown); font-size: 12px; }
+.payment-balance .payment-remaining { background: #f5edde; color: #70552f; font-weight: 700; }
+.payment-balance .payment-remaining strong { color: #70552f; }
+.payment-history-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.payment-history-heading h3 { margin: 0; font-size: 13px; }
+.payment-history-heading span { color: var(--muted); font-size: 10px; }
+.payment-history { display: grid; gap: 0; overflow: hidden; border: 1px solid #eee6da; border-radius: 12px; background: #fffdfa; }
+.payment-history-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 11px; }
+.payment-history-row + .payment-history-row { border-top: 1px solid #f0e9de; }
+.payment-history-row > div { display: grid; min-width: 0; gap: 2px; }
+.payment-history-row > div strong { overflow: hidden; color: #5d5044; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.payment-history-row > div time { color: var(--muted); font-size: 9px; }
+.payment-history-row > strong { flex: 0 0 auto; color: #765a31; font-size: 11px; }
+.payment-history-empty { margin: 0; padding: 12px; color: var(--muted); font-size: 11px; text-align: center; }
+.payment-add-button { min-height: 42px; padding: 8px 12px; border: 1px solid #d6c3a2; border-radius: 11px; background: #fffaf0; color: #604a2d; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; transition: border-color 150ms ease, background-color 150ms ease; }
+.payment-add-button:hover:not(:disabled) { border-color: var(--gold); background: #f7efdf; }
+.payment-add-button:disabled { cursor: default; opacity: .7; }
+.payment-entry-form { padding-top: 13px; border-top: 1px solid #eee6da; }
+.payment-entry-form .form-field input { font-size: 13px; }
+.payment-save-error { margin: 0; padding: 8px 10px; font-size: 10px; }
+.detail-actions { grid-template-columns: 1fr; }
+.detail-actions .cancel-button { max-width: none; }
 .more-module-list { display: grid; gap: 11px; margin-top: 18px; }
 .more-module-card {
   display: flex;
@@ -875,6 +921,14 @@ button:focus-visible, a:focus-visible { outline: 3px solid rgba(198,161,91,.58);
 @keyframes splash-progress { from { transform: translateX(-70%); } to { transform: translateX(180%); } }
 @media (min-width: 401px) {
   .app-frame { min-height: 100dvh; border-inline: 1px solid rgba(226,216,201,.55); }
+}
+@media (max-width: 370px) {
+  .record-card { gap: 7px; padding-inline: 10px; }
+  .record-actions { gap: 1px; }
+  .record-edit, .record-delete { width: 33px; height: 33px; }
+  .appointment-card-actions .record-action-link,
+  .order-card-actions .record-action-link { padding-inline: 7px; font-size: 9px; }
+  .record-modal { max-width: calc(100vw - 14px); padding: 15px; }
 }
 @media (max-height: 700px) {
   .brand-lockup { width: 116px; height: 126px; margin-bottom: 17px; }

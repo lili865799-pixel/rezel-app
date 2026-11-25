@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { addCustomer, getAllCustomers, softDeleteCustomer } from './db.js';
+import { addCustomer, getAllCustomers, softDeleteCustomer, updateCustomer } from './db.js';
 
 function getWhatsAppPhone(phone) {
   const value = String(phone || '').trim();
@@ -16,11 +16,11 @@ function getWhatsAppPhone(phone) {
   return digits;
 }
 
-function CustomerForm({ onClose, onAdded }) {
+function CustomerForm({ customer, onClose, onSaved }) {
   const dialogRef = useRef(null);
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [notes, setNotes] = useState('');
+  const [name, setName] = useState(customer?.name || '');
+  const [phone, setPhone] = useState(customer?.phone || '');
+  const [notes, setNotes] = useState(customer?.notes || '');
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -45,8 +45,10 @@ function CustomerForm({ onClose, onAdded }) {
     setSaving(true);
     setError('');
     try {
-      const customer = await addCustomer({ name: name.trim(), phone: phone.trim(), notes: notes.trim() });
-      onAdded(customer);
+      const savedCustomer = customer
+        ? await updateCustomer(customer.id, { name: name.trim(), phone: phone.trim(), notes: notes.trim() })
+        : await addCustomer({ name: name.trim(), phone: phone.trim(), notes: notes.trim() });
+      onSaved(savedCustomer);
     } catch {
       setError('تعذّر حفظ العميل. تحقق من البيانات وحاول مرة أخرى.');
       setSaving(false);
@@ -63,8 +65,8 @@ function CustomerForm({ onClose, onAdded }) {
     >
       <div className="modal-topline">
         <div>
-          <h2 className="modal-title" id="customer-form-title">عميل جديد</h2>
-          <p className="modal-copy">أضف بيانات التواصل لتبقى قريبة منك.</p>
+          <h2 className="modal-title" id="customer-form-title">{customer ? 'تعديل بيانات العميل' : 'عميل جديد'}</h2>
+          <p className="modal-copy">{customer ? 'حدّث معلومات التواصل المحفوظة.' : 'أضف بيانات التواصل لتبقى قريبة منك.'}</p>
         </div>
         <button className="modal-close" type="button" aria-label="إغلاق" data-testid="button-close-customer-form" onClick={onClose}>×</button>
       </div>
@@ -86,7 +88,7 @@ function CustomerForm({ onClose, onAdded }) {
         {error && <p className="records-error" role="alert" data-testid="status-customer-save-error">{error}</p>}
         <div className="form-actions">
           <button className="cancel-button" type="button" data-testid="button-cancel-customer" onClick={onClose}>إلغاء</button>
-          <button className="form-submit" type="submit" data-testid="button-submit-customer" disabled={saving}>{saving ? 'جارٍ الحفظ…' : 'حفظ العميل'}</button>
+          <button className="form-submit" type="submit" data-testid="button-submit-customer" disabled={saving}>{saving ? 'جارٍ الحفظ…' : customer ? 'حفظ التعديلات' : 'حفظ العميل'}</button>
         </div>
       </form>
     </dialog>
@@ -117,6 +119,7 @@ function Customers() {
   const [status, setStatus] = useState('loading');
   const [loadError, setLoadError] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [actionError, setActionError] = useState('');
@@ -135,9 +138,12 @@ function Customers() {
   }
   useEffect(() => { loadCustomers(); }, []);
 
-  function addToList(customer) {
-    setCustomers((current) => [customer, ...current]);
+  function saveToList(customer) {
+    setCustomers((current) => editing
+      ? current.map((item) => item.id === customer.id ? customer : item)
+      : [customer, ...current]);
     setShowForm(false);
+    setEditing(null);
     setActionError('');
   }
 
@@ -203,12 +209,15 @@ function Customers() {
                   </div>
                 </div>
               </div>
+              <div className="record-actions">
+                <button className="record-edit" type="button" aria-label={`تعديل ${customer.name}`} data-testid={`button-edit-customer-${customer.id}`} onClick={() => { setActionError(''); setEditing(customer); setShowForm(true); }}>✏️</button>
               <button className="record-delete" type="button" aria-label={`حذف ${customer.name}`} data-testid={`button-delete-customer-${customer.id}`} onClick={() => setDeleting(customer)}><span aria-hidden="true">×</span></button>
+              </div>
             </article>
           ))}
         </section>
       )}
-      {showForm && <CustomerForm onClose={() => setShowForm(false)} onAdded={addToList} />}
+      {showForm && <CustomerForm customer={editing} onClose={() => { setShowForm(false); setEditing(null); }} onSaved={saveToList} />}
       {deleting && <DeleteCustomerDialog customer={deleting} busy={deleteBusy} onClose={() => !deleteBusy && setDeleting(null)} onConfirm={confirmDelete} />}
     </main>
   );
