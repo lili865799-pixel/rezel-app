@@ -17,6 +17,7 @@ import Customers from './Customers.jsx';
 import Expenses from './Expenses.jsx';
 import Orders from './Orders.jsx';
 import Services from './Services.jsx';
+import Settings from './Settings.jsx';
 import Splash from './Splash.jsx';
 import BrandHeader from './BrandHeader.jsx';
 
@@ -57,7 +58,7 @@ const placeholderPages = {
     title: 'المزيد',
     subtitle: 'أدوات إضافية لتنظيم نشاطك.',
     empty: 'مساحة أدوات نشاطك',
-    detail: 'تابع المصروفات والطلبات الخاصة من هنا.',
+    detail: 'تابع المصروفات والطلبات والنسخ الاحتياطية من هنا.',
   },
 };
 
@@ -249,6 +250,24 @@ function AppLayout() {
     loadBusiness();
   }, [loadBusiness]);
 
+  useEffect(() => {
+    function refreshBusinessAfterRestore() {
+      getBusinessType()
+        .then((storedBusiness) => {
+          if (typeof storedBusiness !== 'string' || !storedBusiness.trim()) {
+            setStatus('missing');
+            return;
+          }
+          setBusinessName(storedBusiness);
+          setStatus('ready');
+        })
+        .catch(() => setStatus('error'));
+    }
+
+    window.addEventListener('rezel:backup-restored', refreshBusinessAfterRestore);
+    return () => window.removeEventListener('rezel:backup-restored', refreshBusinessAfterRestore);
+  }, []);
+
   if (status === 'loading') {
     return (
       <div
@@ -376,6 +395,14 @@ function PlaceholderPage({ page }) {
             </span>
             <span className="more-module-arrow" aria-hidden="true">‹</span>
           </Link>
+          <Link className="more-module-card" to="/settings" data-testid="link-more-settings">
+            <span className="more-module-symbol" aria-hidden="true">⚙</span>
+            <span className="more-module-copy">
+              <strong>الإعدادات والنسخ الاحتياطي</strong>
+              <span>صدّر بياناتك أو استعد نسخة محفوظة.</span>
+            </span>
+            <span className="more-module-arrow" aria-hidden="true">‹</span>
+          </Link>
         </section>
       ) : (
         <section
@@ -417,6 +444,7 @@ function AppRoutes() {
         <Route path="/services" element={<Services />} />
         <Route path="/expenses" element={<Expenses />} />
         <Route path="/orders" element={<Orders />} />
+        <Route path="/settings" element={<Settings />} />
         <Route path="/more" element={<PlaceholderPage page="more" />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

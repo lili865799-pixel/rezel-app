@@ -10,6 +10,17 @@ const PAYMENTS_STORE = 'payments';
 const EXPENSES_STORE = 'expenses';
 const ORDERS_STORE = 'orders';
 const BUSINESS_TYPE_KEY = 'businessType';
+const BACKUP_FORMAT = 'rezel-backup';
+const BACKUP_VERSION = 1;
+const BACKUP_STORE_NAMES = [
+  SETTINGS_STORE,
+  CUSTOMERS_STORE,
+  SERVICES_STORE,
+  APPOINTMENTS_STORE,
+  PAYMENTS_STORE,
+  EXPENSES_STORE,
+  ORDERS_STORE,
+];
 
 let databasePromise;
 
@@ -752,6 +763,379 @@ export async function addPayment({
     await paymentStore.add(payment);
     await transactionDone;
     return payment;
+  } catch (error) {
+    try {
+      transaction.abort();
+    } catch {
+      // The transaction may already have completed or aborted.
+    }
+    try {
+      await transactionDone;
+    } catch {
+      // Consume the aborted transaction rejection before reporting the cause.
+    }
+    throw error;
+  }
+}
+
+function invalidBackup(message) {
+  throw new TypeError(message);
+}
+
+function backupText(value, label) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    invalidBackup(`حقل «${label}» مفقود أو غير صالح.`);
+  }
+  return value.trim();
+}
+
+function backupOptionalText(value, label) {
+  if (value === undefined || value === null) return '';
+  if (typeof value !== 'string') {
+    invalidBackup(`حقل «${label}» يجب أن يكون نصاً.`);
+  }
+  return value;
+}
+
+function backupNumber(value, label, { allowZero = true } = {}) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || (!allowZero && value === 0)) {
+    invalidBackup(`قيمة «${label}» غير صالحة.`);
+  }
+  return value;
+}
+
+function backupTimestamp(value, label) {
+  if (typeof value !== 'string' || !value.trim() || Number.isNaN(Date.parse(value))) {
+    invalidBackup(`تاريخ «${label}» غير صالح.`);
+  }
+  return value;
+}
+
+function backupDate(value, label) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    invalidBackup(`تاريخ «${label}» غير صالح.`);
+  }
+  const [year, month, day] = value.split('-').map(Number);
+  const checked = new Date(Date.UTC(year, month - 1, day));
+  if (
+    checked.getUTCFullYear() !== year ||
+    checked.getUTCMonth() !== month - 1 ||
+    checked.getUTCDate() !== day
+  ) {
+    invalidBackup(`تاريخ «${label}» غير صالح.`);
+  }
+  return value;
+}
+
+function backupObject(value, label) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    invalidBackup(`بيانات «${label}» غير صالحة.`);
+  }
+  return value;
+}
+
+function backupArray(value, label) {
+  if (!Array.isArray(value)) {
+    invalidBackup(`قائمة «${label}» مفقودة أو غير صالحة.`);
+  }
+  return value;
+}
+
+function validateRecordIds(records, storeName) {
+  const ids = new Set();
+  return records.map((record) => {
+    const item = backupObject(record, storeName);
+    const id = backupText(item.id, `${storeName}.id`);
+    if (ids.has(id)) {
+      invalidBackup(`تحتوي قائمة «${storeName}» على معرّف مكرر.`);
+    }
+    ids.add(id);
+    return { ...item, id };
+  });
+}
+
+function validateBackupStores(backup) {
+  const source = backupObject(backup.stores, 'المتاجر');
+  const stores = {};
+  BACKUP_STORE_NAMES.forEach((storeName) => {
+    if (!Object.prototype.hasOwnProperty.call(source, storeName)) {
+      invalidBackup(`النسخة لا تحتوي على بيانات «${storeName}».`);
+    }
+  });
+
+  const settingsEntries = backupArray(source[SETTINGS_STORE], 'الإعدادات').map((entry) => {
+    const item = backupObject(entry, 'الإعدادات');
+    return {
+      key: backupText(item.key, 'مفتاح الإعداد'),
+      value: item.value,
+    };
+  });
+  const settingKeys = new Set();
+  settingsEntries.forEach(({ key }) => {
+    if (settingKeys.has(key)) invalidBackup('يوجد مفتاح إعداد مكرر.');
+    settingKeys.add(key);
+  });
+  const businessType = settingsEntries.find((entry) => entry.key === BUSINESS_TYPE_KEY)?.value;
+  if (typeof businessType !== 'string' || !businessType.trim()) {
+    invalidBackup('النسخة لا تحتوي على نوع النشاط المحفوظ.');
+  }
+  stores[SETTINGS_STORE] = settingsEntries;
+
+  stores[CUSTOMERS_STORE] = validateRecordIds(
+    backupArray(source[CUSTOMERS_STORE], 'العملاء'),
+    CUSTOMERS_STORE,
+  ).map((item) => {
+    const deletedAt = item.deletedAt ?? null;
+    if (deletedAt !== null) backupTimestamp(deletedAt, 'deletedAt');
+    return {
+      ...item,
+      name: backupText(item.name, 'اسم العميل'),
+      phone: backupText(item.phone, 'هاتف العميل'),
+      notes: backupOptionalText(item.notes, 'ملاحظات العميل'),
+      createdAt: backupTimestamp(item.createdAt, 'createdAt للعميل'),
+      deletedAt,
+    };
+  });
+  const customerIds = new Set(stores[CUSTOMERS_STORE].map((item) => item.id));
+
+  stores[SERVICES_STORE] = validateRecordIds(
+    backupArray(source[SERVICES_STORE], 'الخدمات'),
+    SERVICES_STORE,
+  ).map((item) => {
+    const deletedAt = item.deletedAt ?? null;
+    if (deletedAt !== null) backupTimestamp(deletedAt, 'deletedAt');
+    const duration = item.duration ?? null;
+    if (duration !== null) backupNumber(duration, 'مدة الخدمة');
+    return {
+      ...item,
+      name: backupText(item.name, 'اسم الخدمة'),
+      price: backupNumber(item.price, 'سعر الخدمة'),
+      duration,
+      notes: backupOptionalText(item.notes, 'ملاحظات الخدمة'),
+      createdAt: backupTimestamp(item.createdAt, 'createdAt للخدمة'),
+      deletedAt,
+    };
+  });
+  const serviceIds = new Set(stores[SERVICES_STORE].map((item) => item.id));
+
+  stores[APPOINTMENTS_STORE] = validateRecordIds(
+    backupArray(source[APPOINTMENTS_STORE], 'المواعيد'),
+    APPOINTMENTS_STORE,
+  ).map((item) => {
+    const customerId = backupText(item.customerId, 'عميل الموعد');
+    const serviceId = backupText(item.serviceId, 'خدمة الموعد');
+    if (!customerIds.has(customerId) || !serviceIds.has(serviceId)) {
+      invalidBackup('يوجد موعد مرتبط بعميل أو خدمة غير موجودة.');
+    }
+    const time = backupText(item.time, 'وقت الموعد');
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+      invalidBackup('يوجد وقت موعد غير صالح.');
+    }
+    return {
+      ...item,
+      customerId,
+      serviceId,
+      date: backupDate(item.date, 'الموعد'),
+      time,
+      price: backupNumber(item.price, 'سعر الموعد'),
+      status: backupText(item.status, 'حالة الموعد'),
+      notes: backupOptionalText(item.notes, 'ملاحظات الموعد'),
+      createdAt: backupTimestamp(item.createdAt, 'createdAt للموعد'),
+    };
+  });
+  const appointmentIds = new Set(stores[APPOINTMENTS_STORE].map((item) => item.id));
+
+  stores[ORDERS_STORE] = validateRecordIds(
+    backupArray(source[ORDERS_STORE], 'الطلبات'),
+    ORDERS_STORE,
+  ).map((item) => {
+    const customerId = backupText(item.customerId, 'عميل الطلب');
+    if (!customerIds.has(customerId)) invalidBackup('يوجد طلب مرتبط بعميل غير موجود.');
+    const price = backupNumber(item.price, 'سعر الطلب', { allowZero: false });
+    const deposit = backupNumber(item.deposit, 'عربون الطلب');
+    if (deposit > price) invalidBackup('عربون أحد الطلبات أكبر من سعره.');
+    if (!ORDER_STATUSES.has(item.status)) invalidBackup('تحتوي النسخة على حالة طلب غير مدعومة.');
+    return {
+      ...item,
+      customerId,
+      description: backupText(item.description, 'وصف الطلب'),
+      price,
+      deposit,
+      dueDate: backupDate(item.dueDate, 'موعد تسليم الطلب'),
+      status: item.status,
+      notes: backupOptionalText(item.notes, 'ملاحظات الطلب'),
+      createdAt: backupTimestamp(item.createdAt, 'createdAt للطلب'),
+    };
+  });
+  const orderIds = new Set(stores[ORDERS_STORE].map((item) => item.id));
+
+  stores[PAYMENTS_STORE] = validateRecordIds(
+    backupArray(source[PAYMENTS_STORE], 'الدفعات'),
+    PAYMENTS_STORE,
+  ).map((item) => {
+    const hasAppointment = typeof item.appointmentId === 'string' && item.appointmentId.length > 0;
+    const hasOrder = typeof item.orderId === 'string' && item.orderId.length > 0;
+    if (hasAppointment === hasOrder) {
+      invalidBackup('يجب ربط كل دفعة بموعد واحد أو طلب واحد فقط.');
+    }
+    if (hasAppointment && !appointmentIds.has(item.appointmentId)) {
+      invalidBackup('توجد دفعة مرتبطة بموعد غير موجود.');
+    }
+    if (hasOrder && !orderIds.has(item.orderId)) {
+      invalidBackup('توجد دفعة مرتبطة بطلب غير موجود.');
+    }
+    const customerId = backupText(item.customerId, 'عميل الدفعة');
+    if (!customerIds.has(customerId)) invalidBackup('توجد دفعة مرتبطة بعميل غير موجود.');
+    const date = backupText(item.date, 'تاريخ الدفعة');
+    if (
+      /^\d{4}-\d{2}-\d{2}$/.test(date)
+        ? !isValidBackupDate(date)
+        : Number.isNaN(Date.parse(date))
+    ) {
+      invalidBackup('تاريخ إحدى الدفعات غير صالح.');
+    }
+    return {
+      ...item,
+      ...(hasAppointment ? { appointmentId: item.appointmentId } : { orderId: item.orderId }),
+      customerId,
+      amount: backupNumber(item.amount, 'مبلغ الدفعة'),
+      type: backupText(item.type, 'نوع الدفعة'),
+      date,
+      notes: backupOptionalText(item.notes, 'ملاحظات الدفعة'),
+      ...(item.createdAt === undefined ? {} : { createdAt: backupTimestamp(item.createdAt, 'createdAt للدفعة') }),
+    };
+  });
+
+  stores[EXPENSES_STORE] = validateRecordIds(
+    backupArray(source[EXPENSES_STORE], 'المصروفات'),
+    EXPENSES_STORE,
+  ).map((item) => ({
+    ...item,
+    amount: backupNumber(item.amount, 'مبلغ المصروف', { allowZero: false }),
+    category: backupText(item.category, 'تصنيف المصروف'),
+    date: backupDate(item.date, 'المصروف'),
+    notes: backupOptionalText(item.notes, 'ملاحظات المصروف'),
+    createdAt: backupTimestamp(item.createdAt, 'createdAt للمصروف'),
+  }));
+
+  return stores;
+}
+
+function isValidBackupDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const checked = new Date(Date.UTC(year, month - 1, day));
+  return checked.getUTCFullYear() === year
+    && checked.getUTCMonth() === month - 1
+    && checked.getUTCDate() === day;
+}
+
+export function validateBackup(backup) {
+  const source = backupObject(backup, 'النسخة الاحتياطية');
+  if (source.format !== BACKUP_FORMAT) {
+    invalidBackup('هذا الملف ليس نسخة احتياطية صالحة من REZEL.');
+  }
+  if (source.version !== BACKUP_VERSION) {
+    invalidBackup('إصدار هذه النسخة الاحتياطية غير مدعوم.');
+  }
+  backupTimestamp(source.exportedAt, 'تاريخ إنشاء النسخة');
+
+  const stores = validateBackupStores(source);
+  return {
+    format: BACKUP_FORMAT,
+    version: BACKUP_VERSION,
+    exportedAt: source.exportedAt,
+    stores,
+  };
+}
+
+export async function createBackup() {
+  const database = await getDatabase();
+  const transaction = database.transaction(BACKUP_STORE_NAMES, 'readonly');
+  const transactionDone = transaction.done;
+
+  try {
+    const settingsStore = transaction.objectStore(SETTINGS_STORE);
+    const [
+      settingKeys,
+      settingValues,
+      customers,
+      services,
+      appointments,
+      payments,
+      expenses,
+      orders,
+    ] = await Promise.all([
+      settingsStore.getAllKeys(),
+      settingsStore.getAll(),
+      transaction.objectStore(CUSTOMERS_STORE).getAll(),
+      transaction.objectStore(SERVICES_STORE).getAll(),
+      transaction.objectStore(APPOINTMENTS_STORE).getAll(),
+      transaction.objectStore(PAYMENTS_STORE).getAll(),
+      transaction.objectStore(EXPENSES_STORE).getAll(),
+      transaction.objectStore(ORDERS_STORE).getAll(),
+    ]);
+    await transactionDone;
+
+    const settings = settingKeys.map((key, index) => {
+      if (typeof key !== 'string') {
+        throw new TypeError('لا يمكن تصدير مفتاح إعداد غير نصي.');
+      }
+      return { key, value: settingValues[index] };
+    });
+    return validateBackup({
+      format: BACKUP_FORMAT,
+      version: BACKUP_VERSION,
+      exportedAt: new Date().toISOString(),
+      stores: {
+        [SETTINGS_STORE]: settings,
+        [CUSTOMERS_STORE]: customers,
+        [SERVICES_STORE]: services,
+        [APPOINTMENTS_STORE]: appointments,
+        [PAYMENTS_STORE]: payments,
+        [EXPENSES_STORE]: expenses,
+        [ORDERS_STORE]: orders,
+      },
+    });
+  } catch (error) {
+    try {
+      await transactionDone;
+    } catch {
+      // Consume transaction failures before returning the original error.
+    }
+    throw error;
+  }
+}
+
+export async function restoreBackup(backup) {
+  const validated = validateBackup(backup);
+  const database = await getDatabase();
+  const transaction = database.transaction(BACKUP_STORE_NAMES, 'readwrite');
+  const transactionDone = transaction.done;
+
+  try {
+    const clearRequests = BACKUP_STORE_NAMES.map((storeName) => (
+      transaction.objectStore(storeName).clear()
+    ));
+    await Promise.all(clearRequests);
+
+    const storeData = validated.stores;
+    const writeRequests = [
+      ...storeData[SETTINGS_STORE].map(({ key, value }) => (
+        transaction.objectStore(SETTINGS_STORE).put(value, key)
+      )),
+      ...BACKUP_STORE_NAMES
+        .filter((storeName) => storeName !== SETTINGS_STORE)
+        .flatMap((storeName) => storeData[storeName].map((record) => (
+          transaction.objectStore(storeName).put(record)
+        ))),
+    ];
+    await Promise.all(writeRequests);
+    await transactionDone;
+
+    return Object.fromEntries(
+      BACKUP_STORE_NAMES.map((storeName) => [storeName, storeData[storeName].length]),
+    );
   } catch (error) {
     try {
       transaction.abort();
